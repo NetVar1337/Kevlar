@@ -341,17 +341,22 @@ static uint64_t FindModuleUcBaseByName(const char* ModuleName) {
 #define NtCurrentProcess CURRENT_PROCESS
 
 static bool IsBlacklistedModule(const char* ModuleName) {
+    // VM/hypervisor artifacts that an anti-cheat treats as VM indicators. The host may
+    // have VMware/VirtualBox/Hyper-V loaded; the synthetic guest must present a clean
+    // gaming-machine module list or FACEIT/EAC/VGK reject on VM presence.
     static const char* Blacklist[] = {
         "vmci.sys", "vsock.sys", "vmx86.sys", "vmnet.sys",
         "vmnetbridge.sys", "vmnetuserif.sys", "vm3dmp.sys",
         "vm3dmp-debug.sys", "vm3dmp-stats.sys", "vm3dmp_loader.sys",
         "vmhgfs.sys", "vmmouse.sys", "vmusbmouse.sys", "vmrawdsk.sys",
         "vmmemctl.sys", "vmxnet3.sys",
+        "hcmon.sys", "vmnetadapter.sys", "vmnat.sys", "vmnetdhcp.sys",
+        "vboxguest.sys", "vboxsf.sys", "vboxmouse.sys", "vboxvideo.sys",
+        "vboxdrv.sys", "vboxnetadp.sys", "vboxnetflt.sys",
         "parsecvusba.sys",
         "droidcamvideo.sys", "droidcamaudio.sys",
         "iriuna0.sys",
         "vbaudio_cable64_win10.sys",
-        "vboxguest.sys", "vboxsf.sys", "vboxmouse.sys", "vboxvideo.sys",
     };
     std::string NameLower = ModuleName;
     for (auto& C : NameLower) C = (char)tolower(C);

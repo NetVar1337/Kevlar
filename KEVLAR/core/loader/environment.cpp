@@ -57,12 +57,14 @@ void Environment::InitializeSystemModules() {
         "vm3dmp-debug.sys", "vm3dmp-stats.sys", "vm3dmp_loader.sys",
         "vmhgfs.sys", "vmmouse.sys", "vmusbmouse.sys", "vmrawdsk.sys",
         "vmmemctl.sys", "vmxnet3.sys",
+        "hcmon.sys", "vmnetadapter.sys", "vmnat.sys", "vmnetdhcp.sys",
+        "vboxguest.sys", "vboxsf.sys", "vboxmouse.sys", "vboxvideo.sys",
+        "vboxdrv.sys", "vboxnetadp.sys", "vboxnetflt.sys",
         "parsecvusba.sys",
         "droidcamvideo.sys", "droidcamaudio.sys",
         "iriuna0.sys",
         "vbaudio_cable64_win10.sys",
-        "vboxguest.sys", "vboxsf.sys", "vboxmouse.sys", "vboxvideo.sys",
-        "faceit_ac.sys", "vgk.sys",
+        "faceit_ac.sys", "faceit_iommu.sys", "vgk.sys",
     };
 
     std::vector<KldrEntryInfo> Entries;
