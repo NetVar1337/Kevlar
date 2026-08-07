@@ -1,5 +1,6 @@
 #include "core/process/unicorn_threading.h"
 #include "core/exec/unicorn_engine.h"
+#include "core/exec/unicorn_engine_internal.h"
 #include "core/memory/unicorn_memory.h"
 #include "host/providers/ntoskrnl_provider.h"
 #include "include/ntoskrnl_struct.h"
@@ -51,6 +52,12 @@ static DWORD ThreadEntryCore(ThreadStartInfo* Info) {
     Rsp -= 8;
     uc_mem_write(Info->Engine, Rsp, &RetAddr, 8);
     uc_reg_write(Info->Engine, UC_X86_REG_RSP, &Rsp);
+
+    if (Info->UseArg5) {
+        // 5th __fastcall arg at [RSP+0x28] (entry RSP = StackBase+StackSize-0x108).
+        uint64_t Arg5Slot = Rsp + 0x28;
+        uc_mem_write(Info->Engine, Arg5Slot, &Info->Arg5, 8);
+    }
 
     Logger::Log("{MAG}Thread %llu starting at 0x%llx{RESET}\n", Ctx->ThreadId, Info->StartRoutine);
 
@@ -149,6 +156,7 @@ ThreadContext* UnicornThread::Create(uint64_t StartRoutine, uint64_t StartContex
     auto PerThreadKpcr = (uint8_t*)_aligned_malloc(0x10000, 0x1000);
     memset(PerThreadKpcr, 0, 0x10000);
     memcpy(PerThreadKpcr, &FakeKPCR, sizeof(_KPCR));
+    Ctx->KpcrHostPtr = PerThreadKpcr;
 
     uint64_t ThreadKpcrAddr = NextEthreadAddr;
     NextEthreadAddr += 0x10000;
@@ -213,12 +221,12 @@ ThreadContext* UnicornThread::Create(uint64_t StartRoutine, uint64_t StartContex
     return Ctx;
 }
 
-ThreadContext* UnicornThread::CreateEx(uint64_t StartRoutine, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, PHANDLE OutHandle) {
-    auto CallerEngine = GetCurrentEngine();
-    std::lock_guard<std::mutex> Lock(ThreadLock);
+static ThreadContext* CreateExImpl(uint64_t StartRoutine, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, bool UseArg5, PHANDLE OutHandle) {
+    auto CallerEngine = UnicornThread::GetCurrentEngine();
+    std::lock_guard<std::mutex> Lock(UnicornThread::ThreadLock);
 
     auto Ctx = new ThreadContext();
-    Ctx->ThreadId = NextThreadId++;
+    Ctx->ThreadId = UnicornThread::NextThreadId++;
 
     Ctx->EthreadUcAddr = UnicornMem::AllocateVariable(CallerEngine, sizeof(_ETHREAD), "ETHREAD");
     Ctx->EthreadHostPtr = (_ETHREAD*)UnicornMem::UcToHost(Ctx->EthreadUcAddr);
@@ -245,9 +253,9 @@ ThreadContext* UnicornThread::CreateEx(uint64_t StartRoutine, uint64_t Arg1, uin
         Ctx->EthreadHostPtr->Tcb.ApcState.ApcListHead[1].Blink = (PLIST_ENTRY)ApcList1Uc;
     }
 
-    Ctx->StackBase = NextStackAddr;
+    Ctx->StackBase = UnicornThread::NextStackAddr;
     Ctx->StackSize = THREAD_STACK_SIZE_UC;
-    NextStackAddr += THREAD_STACK_SIZE_UC + 0x1000;
+    UnicornThread::NextStackAddr += THREAD_STACK_SIZE_UC + 0x1000;
 
     auto StackHost = (void*)_aligned_malloc((size_t)THREAD_STACK_SIZE_UC, 0x1000);
     memset(StackHost, 0, (size_t)THREAD_STACK_SIZE_UC);
@@ -264,9 +272,10 @@ ThreadContext* UnicornThread::CreateEx(uint64_t StartRoutine, uint64_t Arg1, uin
     auto PerThreadKpcr = (uint8_t*)_aligned_malloc(0x10000, 0x1000);
     memset(PerThreadKpcr, 0, 0x10000);
     memcpy(PerThreadKpcr, &FakeKPCR, sizeof(_KPCR));
+    Ctx->KpcrHostPtr = PerThreadKpcr;
 
-    uint64_t ThreadKpcrAddr = NextEthreadAddr;
-    NextEthreadAddr += 0x10000;
+    uint64_t ThreadKpcrAddr = UnicornThread::NextEthreadAddr;
+    UnicornThread::NextEthreadAddr += 0x10000;
     uc_mem_map_ptr(Ctx->Engine, ThreadKpcrAddr, 0x10000, UC_PROT_ALL, PerThreadKpcr);
 
     uint64_t EthreadAddr = Ctx->EthreadUcAddr;
@@ -293,6 +302,8 @@ ThreadContext* UnicornThread::CreateEx(uint64_t StartRoutine, uint64_t Arg1, uin
     StartInfo->Arg2 = Arg2;
     StartInfo->Arg3 = Arg3;
     StartInfo->Arg4 = Arg4;
+    StartInfo->Arg5 = 0;
+    StartInfo->UseArg5 = UseArg5;
     StartInfo->NumArgs = 4;
 
     Ctx->Running = false;
@@ -313,6 +324,14 @@ ThreadContext* UnicornThread::CreateEx(uint64_t StartRoutine, uint64_t Arg1, uin
         Ctx->ThreadId, StartRoutine, Arg1, Arg2, Arg3, Arg4, Ctx->EthreadUcAddr);
 
     return Ctx;
+}
+
+ThreadContext* UnicornThread::CreateEx(uint64_t StartRoutine, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, PHANDLE OutHandle) {
+    return CreateExImpl(StartRoutine, Arg1, Arg2, Arg3, Arg4, 0, false, OutHandle);
+}
+
+ThreadContext* UnicornThread::CreateEx5(uint64_t StartRoutine, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, PHANDLE OutHandle) {
+    return CreateExImpl(StartRoutine, Arg1, Arg2, Arg3, Arg4, Arg5, true, OutHandle);
 }
 
 void UnicornThread::Terminate(ThreadContext* Ctx, NTSTATUS ExitStatus) {
@@ -361,4 +380,13 @@ _ETHREAD* UnicornThread::GetCurrentEthread() {
 uc_engine* UnicornThread::GetCurrentEngine() {
     auto Ctx = GetCurrent();
     return Ctx ? Ctx->Engine : UnicornEmu::PrimaryEngine;
+}
+
+uint8_t* UnicornThread::GetCurrentKpcr() {
+    auto Ctx = GetCurrent();
+    if (Ctx && Ctx->KpcrHostPtr)
+        return Ctx->KpcrHostPtr;
+    if (KpcrBlock)
+        return (uint8_t*)KpcrBlock;
+    return (uint8_t*)&FakeKPCR;
 }

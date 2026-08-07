@@ -135,6 +135,7 @@ Enable focused diagnostics:
 | `--trace <file>` | Record a deterministic execution trace |
 | `--check <file>` | Replay a trace; report the first divergence |
 | `--no-pause` | Skip the final pause; exit ~5s after a no-thread run (automation) |
+| `--selftest` | Run the IRQL/APC/DPC/timer self-test and exit (no driver needed) |
 
 ### Runtime layout
 
@@ -172,7 +173,7 @@ Before compatibility work, the locally tested FACEIT drivers both reached their 
 | `FACEIT_AC.sys` | `8b26feff7fc5f75b5eaad42e99b4d9c5b6cd779c408e5d882b5549e6de15b6d9` | `DriverEntry → 0xC0EB0001` |
 | `FACEIT_IOMMU.sys` | `86f93b3b6d899ec7cd3250866fe22251b875a4de2965da642e0a4f2e2ac91f39` | `DriverEntry → 0xC0EB0001` |
 
-Both failures occur after early platform checks involving `InitSafeBootMode`, `KUSER_SHARED_DATA`, CPU feature data and the hypervisor CPUID range. No FACEIT compatibility changes are included in this baseline commit.
+Both failures occur after early platform checks involving `InitSafeBootMode`, `KUSER_SHARED_DATA`, CPU feature data and the hypervisor CPUID range. The roadmap now includes a bounded ACPI/PCI/IOMMU model, but it has not been validated against a live `FACEIT_IOMMU.sys` trace, so no FACEIT compatibility claim is made here.
 
 ## Project layout
 
@@ -206,15 +207,39 @@ generated/                 # Generated layout headers (pdb_layout output)
 - [x] Add branch and value-provenance tracing for early rejection paths (`--provenance`)
 - [x] Generate Windows-build-specific kernel structure layouts from PDBs (`tools/pdb_layout`)
 - [x] Add strict handling for unknown exports instead of ambiguous zero returns (`--strict-exports`)
-- [ ] Expand scheduler, IRQL, APC, DPC, timer and synchronization semantics
-- [ ] Model ACPI, PCI and IOMMU state for IOMMU-oriented drivers
+- [x] Expand scheduler, IRQL, APC, DPC, timer and synchronization semantics
+- [x] Model ACPI, PCI and IOMMU state for IOMMU-oriented drivers
 - [x] Add deterministic trace replay and differential validation (`--trace` / `--check`)
 - [x] Add automated smoke tests for PE mapping and emulator initialization (`tests/smoke.ps1`)
 
-The two remaining items are deferred deliberately: a full scheduler/IRQL/APC/DPC model is
-weeks of semantics work that a partial implementation would destabilize, and ACPI/PCI/IOMMU
-modeling needs a captured trace of what an IOMMU-oriented driver (e.g. FACEIT_IOMMU) actually
-reads before it can be shaped.
+### Scheduler / IRQL / APC / DPC / timer / sync expansion
+
+- Guest-visible IRQL is tracked in `KPCR.Irql` (offset `0x50`): `KeGetCurrentIrql`,
+  `KfRaiseIrql`/`KeRaiseIrql` (return old), `KeLowerIrql`/`KfLowerIrql`,
+  `KeRaiseIrqlToDpcLevel`. Spinlock acquire raises to `DISPATCH_LEVEL` and
+  `KeReleaseSpinLock(lock, NewIrql)` restores it.
+- Kernel APCs are queued per-thread (`KeInsertQueueApc` / `KeRemoveQueueApc`) and
+  delivered at waits, `KeTestAlertThread`, `KeAlertThread` and self-targeted inserts;
+  `KeEnter/LeaveCriticalRegion` and `KeAre(ApcsDisabled)` track the thread's `ApcDisable`
+  counter. Kernel-APC `NormalRoutine` runs on a delivery thread (not the target's
+  context) — see limitations.
+- `KeInitializeDpc` now stores the deferred routine/context (it previously zeroed the
+  object); `KeInsertQueueDpc` / `KeRemoveQueueDpc` run queued DPCs on a host worker.
+- Timers support cancellation (`KeCancelTimer` actually prevents the DPC from firing)
+  and periodic re-arm (`KeSetTimerEx` honours `Period`).
+
+### ACPI / PCI / IOMMU (bounded baseline)
+
+- `HalGetBusDataByOffset` returns a synthetic PCI config space (host bridge + a VT-d
+  IOMMU device).
+- `HalAcpiGetTableEx` returns a guest-resident, checksum-correct VT-d `DMAR` table
+  describing one remapping unit at `0xFED90000`.
+- `MmMapIoSpaceEx` on `0xFED90000` maps a coherent VT-d register block (version,
+  capability, status) so `READ_REGISTER_*` against the IOMMU does not fault.
+
+This model is shaped from the general shape of IOMMU-oriented drivers, not from a
+captured trace of an actual target. Re-validate it against a real trace (e.g. a fresh
+`FACEIT_IOMMU.sys` run) before relying on it for a specific driver.
 
 ### Smoke tests and layout generation
 
@@ -243,6 +268,12 @@ the generated offsets for a different Windows build is a follow-on.
 - Many kernel exports are simplified or intentionally stubbed.
 - Unknown return values can alter downstream control flow.
 - Host threads do not perfectly reproduce Windows scheduling and IRQL behavior.
+- Kernel APCs deliver via a host worker thread, so a queued APC targeting a thread that is
+  already blocked in a wait is only seen at that thread's next delivery point, and a kernel
+  APC's `NormalRoutine` runs on the delivery thread, not the target thread's context.
+- The ACPI/PCI/IOMMU model is a bounded baseline: synthetic PCI config, a VT-d `DMAR`
+  table and a coherent `0xFED90000` register block. CPUID/MSR VT-d advertisement is not
+  modeled, and the register set is minimal until a real IOMMU driver trace validates it.
 - PnP, power, DMA, filter stacks and real device behavior are incomplete.
 - Diagnostic mode can produce large traces and run substantially slower.
 - Import resolution (`PEFile::ResolveImport`) crashes the host when a driver imports from

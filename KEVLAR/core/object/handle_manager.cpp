@@ -9,6 +9,11 @@ namespace TimerManager {
     std::mutex TimerLock;
 }
 
+namespace DpcManager {
+    std::unordered_set<_KDPC*> dpc_queue;
+    std::mutex DpcLock;
+}
+
 namespace MutexManager {
     std::unordered_map<uintptr_t, uint64_t> mutex_manager;
     std::mutex MutexLock;

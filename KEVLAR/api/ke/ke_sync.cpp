@@ -1,16 +1,18 @@
 #include "include/common.h"
 #include "ke_sync.h"
+#include "ke_misc.h"
 
 UCHAR h_KeAcquireSpinLockRaiseToDpc(PKSPIN_LOCK SpinLock) {
     auto HostLock = UcPtr(SpinLock);
     while (_InterlockedCompareExchange64((volatile LONG64*)HostLock, 1, 0) != 0)
         _mm_pause();
-    return (UCHAR)0x00;
+    return h_KeRaiseIrqlToDpcLevel();   // acquiring a spinlock raises IRQL to DISPATCH_LEVEL
 }
 
 void h_KeReleaseSpinLock(PKSPIN_LOCK SpinLock, UCHAR NewIrql) {
     auto HostLock = UcPtr(SpinLock);
     _InterlockedExchange64((volatile LONG64*)HostLock, 0);
+    h_KeLowerIrql(NewIrql);             // restore the IRQL captured at acquire time
 }
 
 void h_KeInitializeSpinLock(PKSPIN_LOCK SpinLock) {
@@ -85,11 +87,6 @@ void h_KeInitializeGuardedMutex(_KGUARDED_MUTEX* Mutex) {
         MutexManager::mutex_manager.insert(std::pair((uintptr_t)Mutex, (uintptr_t)hMutex));
     }
 }
-
-void h_KeEnterCriticalRegion() {}
-void h_KeLeaveCriticalRegion() {}
-void h_KeEnterGuardedRegion() {}
-void h_KeLeaveGuardedRegion() {}
 
 void h_KeInitializeSemaphore(PVOID Semaphore, LONG Count, LONG Limit) {
     Logger::Log("{MAG}\tKeInitializeSemaphore: sem=%p count=%d limit=%d{RESET}\n", Semaphore, Count, Limit);

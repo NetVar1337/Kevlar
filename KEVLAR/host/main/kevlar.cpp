@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <intrin.h>
 #include <iostream>
+#include <malloc.h>
 #include <mutex>
 #include <thread>
 #include <atomic>
@@ -27,8 +28,121 @@
 #include "core/registry/virtual_fs.h"
 #include "core/diagnostics/diag_center.h"
 #include "api/io/io_device.h"
+#include "api/ke/ke_misc.h"
+#include "api/ke/ke_sync.h"
+#include "api/ke/ke_timer.h"
+#include "api/ke/ke_event.h"
 
 static bool NoPause = false;
+static bool SelfTest = false;
+
+// Host-level selftest for the ke_* semantics: exercises IRQL, APC queue/delivery,
+// DPC queue and timer cancel/periodic directly against the built environment.
+// Runs without a target driver; smoke.ps1 invokes `KEVLAR.exe --selftest`.
+static int RunSelfTest() {
+    int Fails = 0;
+    auto Check = [&Fails](bool Cond, const char* Msg) {
+        if (Cond)
+            Logger::Log("{GRN}  [PASS] %s{RESET}\n", Msg);
+        else {
+            Logger::Log("{RED}  [FAIL] %s{RESET}\n", Msg);
+            Fails++;
+        }
+    };
+
+    const uint64_t SelftestBase = 0xFFFFF10000000000ULL;
+    const uint64_t RegionSize = 0x1000;
+    void* RegionHost = _aligned_malloc((size_t)RegionSize, 0x1000);
+    if (!RegionHost) { Logger::Log("{RED}selftest: region alloc failed{RESET}\n"); return 1; }
+    memset(RegionHost, 0, (size_t)RegionSize);
+    if (!UnicornEmu::MapRegionPtr(UnicornEmu::PrimaryEngine, SelftestBase, RegionSize, UC_PROT_ALL, RegionHost, "SelftestRegion")) {
+        Logger::Log("{RED}selftest: region map failed{RESET}\n");
+        return 1;
+    }
+    UnicornMem::TrackExisting(SelftestBase, RegionHost, RegionSize, "SelftestRegion");
+
+    uint8_t* R = (uint8_t*)RegionHost;
+    // Guest routines (position-independent):
+    //   APC:  rax=[r8]; [rax]=0x41414141; ret     (r8 = &Apc->NormalContext)
+    //   DPC:  rax=rdx; [rax]=0x42424242; ret       (rdx = DeferredContext)
+    //   cancel/timer probes: same shape, distinct markers
+    static const uint8_t ApcRoutine[]  = { 0x49, 0x8B, 0x00, 0xC7, 0x00, 0x41, 0x41, 0x41, 0x41, 0xC3 };
+    static const uint8_t DpcRoutine[]  = { 0x48, 0x89, 0xD0, 0xC7, 0x00, 0x42, 0x42, 0x42, 0x42, 0xC3 };
+    static const uint8_t CancelRoutine[] = { 0x48, 0x89, 0xD0, 0xC7, 0x00, 0x43, 0x43, 0x43, 0x43, 0xC3 };
+    static const uint8_t TimerRoutine[] = { 0x48, 0x89, 0xD0, 0xC7, 0x00, 0x44, 0x44, 0x44, 0x44, 0xC3 };
+    memcpy(R + 0x100, ApcRoutine, sizeof(ApcRoutine));
+    memcpy(R + 0x200, DpcRoutine, sizeof(DpcRoutine));
+    memcpy(R + 0x300, CancelRoutine, sizeof(CancelRoutine));
+    memcpy(R + 0x350, TimerRoutine, sizeof(TimerRoutine));
+
+    const uint64_t ApcMarker = SelftestBase + 0x000;
+    const uint64_t DpcMarker = SelftestBase + 0x010;
+    const uint64_t CancelMarker = SelftestBase + 0x020;
+    const uint64_t TimerMarker = SelftestBase + 0x030;
+
+    // --- IRQL ---
+    Logger::Log("{CYN}=== SELFTEST: IRQL ==={RESET}\n");
+    UCHAR Old = h_KfRaiseIrql(2);
+    Check(Old == 0 && h_KeGetCurrentIrql() == 2, "KfRaiseIrql(2)->0, KeGetCurrentIrql()==2");
+    h_KeLowerIrql(0);
+    Check(h_KeGetCurrentIrql() == 0, "KeLowerIrql(0)->KeGetCurrentIrql()==0");
+    Check(h_KeRaiseIrql(2) == 0 && h_KeGetCurrentIrql() == 2, "KeRaiseIrql(2)->0, KeGetCurrentIrql()==2");
+    Check(h_KeRaiseIrqlToDpcLevel() == 2, "KeRaiseIrqlToDpcLevel() at DPC returns old IRQL 2");
+    h_KeLowerIrql(0);
+
+    // --- APC: critical region suppresses, delivery runs KernelRoutine ---
+    // Structs live in the guest region; pass their guest addresses to the ke_*
+    // handlers (UcPtr resolves them), read fields back from the host copies.
+    Logger::Log("{CYN}=== SELFTEST: APC ==={RESET}\n");
+    uint64_t ApcGuest = SelftestBase + 0x400;
+    _KAPC* ApcHost = (_KAPC*)(R + 0x400);
+    h_KeInitializeApc((_KAPC*)ApcGuest, (_KTHREAD*)&FakeKernelThread, 0, (void*)(SelftestBase + 0x100), nullptr, nullptr, 0, (void*)ApcMarker);
+    h_KeEnterCriticalRegion();
+    BOOLEAN Inserted = h_KeInsertQueueApc((_KAPC*)ApcGuest, nullptr, nullptr, 0);
+    Check(Inserted && ApcHost->Inserted == 1, "KeInsertQueueApc queued while in critical region");
+    h_KeLeaveCriticalRegion();
+    h_KeTestAlertThread(0);
+    Check(ApcHost->Inserted == 0, "APC delivered after leaving critical region (Inserted cleared)");
+    volatile uint32_t* ApcMarkerHost = (volatile uint32_t*)UnicornMem::UcToHost(ApcMarker);
+    for (int I = 0; I < 200 && *ApcMarkerHost != 0x41414141; I++) Sleep(10);
+    Check(*ApcMarkerHost == 0x41414141, "APC KernelRoutine ran and wrote the marker");
+
+    // --- DPC via KeInsertQueueDpc ---
+    Logger::Log("{CYN}=== SELFTEST: DPC ==={RESET}\n");
+    uint64_t DpcGuest = SelftestBase + 0x500;
+    _KDPC* DpcHost = (_KDPC*)(R + 0x500);
+    h_KeInitializeDpc((_KDPC*)DpcGuest, (void*)(SelftestBase + 0x200), (void*)DpcMarker);
+    Check((uint64_t)DpcHost->DeferredRoutine == (SelftestBase + 0x200), "KeInitializeDpc stored the routine");
+    Check(h_KeInsertQueueDpc((_KDPC*)DpcGuest, nullptr, nullptr), "KeInsertQueueDpc accepted the DPC");
+    volatile uint32_t* DpcMarkerHost = (volatile uint32_t*)UnicornMem::UcToHost(DpcMarker);
+    for (int I = 0; I < 200 && *DpcMarkerHost != 0x42424242; I++) Sleep(10);
+    Check(*DpcMarkerHost == 0x42424242, "DPC routine ran");
+
+    // --- Timer DPC fires; KeCancelTimer prevents a canceled timer's DPC ---
+    Logger::Log("{CYN}=== SELFTEST: Timer ==={RESET}\n");
+    uint64_t TimerGuest = SelftestBase + 0x600;
+    uint64_t TimerDpcGuest = SelftestBase + 0x700;
+    LARGE_INTEGER Due; Due.QuadPart = -100000;   // 10ms relative
+    h_KeInitializeTimer((_KTIMER*)TimerGuest);
+    h_KeInitializeDpc((_KDPC*)TimerDpcGuest, (void*)(SelftestBase + 0x350), (void*)TimerMarker);
+    h_KeSetTimer((_KTIMER*)TimerGuest, Due, (_KDPC*)TimerDpcGuest);
+    volatile uint32_t* TimerMarkerHost = (volatile uint32_t*)UnicornMem::UcToHost(TimerMarker);
+    for (int I = 0; I < 200 && *TimerMarkerHost != 0x44444444; I++) Sleep(10);
+    Check(*TimerMarkerHost == 0x44444444, "timer DPC fired after the due time");
+
+    uint64_t CancelTimerGuest = SelftestBase + 0x800;
+    uint64_t CancelDpcGuest = SelftestBase + 0x900;
+    h_KeInitializeTimer((_KTIMER*)CancelTimerGuest);
+    h_KeInitializeDpc((_KDPC*)CancelDpcGuest, (void*)(SelftestBase + 0x300), (void*)CancelMarker);
+    h_KeSetTimer((_KTIMER*)CancelTimerGuest, Due, (_KDPC*)CancelDpcGuest);
+    Check(h_KeCancelTimer((_KTIMER*)CancelTimerGuest), "KeCancelTimer cancels a pending timer");
+    volatile uint32_t* CancelMarkerHost = (volatile uint32_t*)UnicornMem::UcToHost(CancelMarker);
+    Sleep(100);
+    Check(*CancelMarkerHost == 0, "canceled timer's DPC did not fire");
+
+    Logger::Log("{CYN}=== SELFTEST %s (%d failures) ==={RESET}\n", Fails == 0 ? "PASS" : "FAIL", Fails);
+    return Fails == 0 ? 0 : 1;
+}
 
 __forceinline void InitDirs() {
     char ExePath[MAX_PATH] = { 0 };
@@ -120,6 +234,7 @@ int main(int Argc, char* Argv[]) {
         Logger::Log("  --trace <file>          Record deterministic execution trace{RESET}\n");
         Logger::Log("  --check <file>          Replay trace; report first divergence{RESET}\n");
         Logger::Log("  --no-pause              Skip final pause; exit ~5s after a no-thread run (automation){RESET}\n");
+        Logger::Log("  --selftest              Run the ke_* semantics self-test and exit (no driver){RESET}\n");
     };
 
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
@@ -212,6 +327,8 @@ int main(int Argc, char* Argv[]) {
                 }
             } else if (Arg == "--no-pause") {
                 NoPause = true;
+            } else if (Arg == "--selftest") {
+                SelfTest = true;
             } else if (Arg == "--pause")
             {
                system("pause");
@@ -229,6 +346,16 @@ int main(int Argc, char* Argv[]) {
                 return 1;
             }
         }
+    }
+
+    if (SelfTest) {
+        int SelfResult = RunSelfTest();
+        // ExitProcess bypasses the global-destructor teardown that crashes on the
+        // no-driver exit path (pre-existing: a std::string holds a stale guest pointer).
+        // Flush first -- ExitProcess skips stdio flushing, which drops redirected output.
+        fflush(stdout);
+        fflush(stderr);
+        ExitProcess((UINT)SelfResult);
     }
 
     if (DriverPath.empty()) {

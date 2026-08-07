@@ -40,4 +40,15 @@ if ($fail.Count) {
 
 $ret = ($out -split "`n") | Where-Object { $_ -match "DriverEntry returned:" }
 Write-Host "SMOKE PASS - $($ret.Trim())" -ForegroundColor Green
+
+# ke_* semantics self-test (IRQL / APC / DPC / timer) -- no driver needed.
+Write-Host "Running KEVLAR --selftest..."
+$stLog = Join-Path $env:TEMP "kevlar_selftest.log"
+& $exe --selftest 2>&1 | Tee-Object -FilePath $stLog | Out-Null
+$stOut = Get-Content $stLog -Raw
+if ($stOut -match "SELFTEST FAIL" -or $stOut -notmatch "SELFTEST PASS") {
+    Write-Host "SELFTEST FAIL" -ForegroundColor Red
+    exit 1
+}
+Write-Host "SELFTEST PASS" -ForegroundColor Green
 exit 0

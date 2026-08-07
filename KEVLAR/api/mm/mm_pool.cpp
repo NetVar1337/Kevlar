@@ -1,5 +1,6 @@
 #include "include/common.h"
 #include "mm_pool.h"
+#include <malloc.h>
 
 void* hM_AllocPool(uint32_t pooltype, size_t size);
 
@@ -49,6 +50,30 @@ PVOID k_MmMapIoSpaceEx(
    SIZE_T           NumberOfBytes,
    ULONG            Protect
 ) {
+    if (PhysicalAddress == 0xFED90000) {
+        // VT-d DMAR register block referenced by the synthetic DMAR table.
+        // Map the returned VA with a host buffer holding coherent capability
+        // registers so READ_REGISTER_* on it does not fault.
+        // ponytail: minimal register set (version/cap/status/root table); extend
+        // when a real IOMMU driver is seen polling specific bits.
+        size_t Size = PAGE_ALIGN_UP(NumberOfBytes ? NumberOfBytes : 0x1000);
+        uint64_t Va = PhysicalAddress * 0x1000;
+        void* HostBuf = UnicornMem::UcToHost(Va);
+        if (!HostBuf) {
+            HostBuf = _aligned_malloc(Size, 0x1000);
+            if (!HostBuf) return nullptr;
+            memset(HostBuf, 0, Size);
+            *(volatile uint32_t*)((uint8_t*)HostBuf + 0x00) = 0x10;      // VERSION: 1.0
+            *(volatile uint64_t*)((uint8_t*)HostBuf + 0x08) = 0x2000000000000080ULL; // CAP: coherent + 2^16 domains
+            *(volatile uint32_t*)((uint8_t*)HostBuf + 0x10) = 0;         // ECMD: all off
+            *(volatile uint32_t*)((uint8_t*)HostBuf + 0x14) = 0;         // GSTS: no translation enabled
+            *(volatile uint64_t*)((uint8_t*)HostBuf + 0x20) = 0;         // RTADDR: root table not set
+            uc_mem_map_ptr(UnicornEmu::PrimaryEngine, Va, Size, UC_PROT_ALL, HostBuf);
+            UnicornMem::TrackExisting(Va, HostBuf, Size, "VTD_MMIO");
+        }
+        return (PVOID)Va;
+    }
+
     if (PhysicalAddress == 0xfee00000)
         return 0;
     return (PVOID)(PhysicalAddress * 0x1000);

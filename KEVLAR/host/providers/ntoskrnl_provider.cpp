@@ -30,32 +30,109 @@
 #include "api/rtl/crt_string.h"
 #include "core/debug/dbg_print.h"
 
+// Bounded ACPI/PCI/IOMMU model: synthetic PCI config space + a guest-resident
+// VT-d DMAR table describing one DRHD unit at 0xFED90000 (mapped in MmMapIoSpaceEx).
+// ponytail: shaped from the general shape of IOMMU-oriented drivers, not from a
+// captured FACEIT_IOMMU trace; re-validate against a real trace when one is available.
 static uint64_t h_HalGetBusDataByOffset(uint64_t BusDataType, uint64_t BusNumber, uint64_t SlotNumber, PVOID Buffer, uint64_t Offset, uint64_t Length) {
-    return 0;
+    if (BusDataType != 5)   // PCIConfiguration
+        return 0;
+
+    auto HostBuffer = UcPtr(Buffer);
+    if (!HostBuffer || Length == 0) return 0;
+
+    uint8_t Config[256] = { 0 };
+    uint8_t Device = (uint8_t)((SlotNumber >> 3) & 0x1F);
+    uint8_t Function = (uint8_t)(SlotNumber & 0x7);
+
+    if (Device == 0 && Function == 0) {
+        // Intel host bridge (vendor 0x8086)
+        Config[0x00] = 0x86; Config[0x01] = 0x80;        // VendorID
+        Config[0x02] = 0x1F; Config[0x03] = 0x3E;        // DeviceID 0x3E1F
+        Config[0x08] = 0x00; Config[0x09] = 0x00;        // Revision
+        Config[0x0A] = 0x06; Config[0x0B] = 0x00;        // Class: Host Bridge
+        Config[0x0E] = 0x00; Config[0x0F] = 0x00;        // HeaderType 0
+    } else if (Device == 0 && Function == 2) {
+        // Intel VT-d IOMMU (Raptor Lake 0x4612)
+        Config[0x00] = 0x86; Config[0x01] = 0x80;        // VendorID
+        Config[0x02] = 0x12; Config[0x03] = 0x46;        // DeviceID 0x4612
+        Config[0x08] = 0x10; Config[0x09] = 0x00;        // Revision
+        Config[0x0A] = 0x08; Config[0x0B] = 0x00;        // Class: System Peripheral
+        Config[0x0E] = 0x00; Config[0x0F] = 0x00;        // HeaderType 0
+    } else {
+        return 0;   // no synthetic config for other device/function slots
+    }
+
+    if (Offset >= sizeof(Config)) return 0;
+    size_t CopyLen = (size_t)Length;
+    if (Offset + CopyLen > sizeof(Config))
+        CopyLen = sizeof(Config) - (size_t)Offset;
+    memcpy(HostBuffer, Config + Offset, CopyLen);
+    return CopyLen;
 }
 
 static uint64_t h_HalAcpiGetTableEx(uint64_t Signature, uint64_t Instance, uint64_t OutTable, uint64_t OutSize) {
     Logger::Log("{GRY}\tHalAcpiGetTableEx: sig=0x%x instance=%llu{RESET}\n", (uint32_t)Signature, Instance);
 
-    typedef PVOID(__stdcall* tHalAcpiGetTableEx)(ULONG Sig, ULONG Inst, PVOID* OutTbl, PVOID* OutSz);
-    static tHalAcpiGetTableEx pReal = nullptr;
-    if (!pReal) {
-        HMODULE hHal = GetModuleHandleA("hal.dll");
-        if (hHal) pReal = (tHalAcpiGetTableEx)GetProcAddress(hHal, "HalAcpiGetTableEx");
-    }
-    if (pReal) {
-        PVOID Table = nullptr;
-        PVOID SizePtr = nullptr;
-        PVOID Result = pReal((ULONG)Signature, (ULONG)Instance, &Table, &SizePtr);
-        if (Result) {
-            auto HostOutTable = UcPtr((PVOID*)OutTable);
-            auto HostOutSize = UcPtr((PVOID*)OutSize);
-            if (HostOutTable) *HostOutTable = (PVOID)Table;
-            if (HostOutSize) *HostOutSize = SizePtr;
-            return 0;
-        }
-    }
-    return 0xC0000225;
+    if ((Signature & 0xFFFFFFFF) != 0x52414D44)   // 'DMAR'
+        return STATUS_NOT_FOUND;
+
+    auto HostOutTable = UcPtr((PVOID*)OutTable);
+    auto HostOutSize = (ULONG*)UcPtr((ULONG*)OutSize);
+    if (!HostOutTable || !HostOutSize) return STATUS_INVALID_PARAMETER;
+
+    // ACPI SDT header + one DRHD (Remapping Hardware Unit Declaration).
+    struct DmarHeader {
+        uint32_t Signature;
+        uint32_t Length;
+        uint8_t Revision;
+        uint8_t Checksum;
+        uint8_t OemId[6];
+        uint8_t OemTableId[8];
+        uint32_t OemRevision;
+        uint32_t CreatorId;
+        uint32_t CreatorRevision;
+    };
+    struct DrhdEntry {
+        uint16_t Type;
+        uint16_t Length;
+        uint8_t Flags;
+        uint8_t Reserved;
+        uint16_t SegmentNumber;
+        uint64_t RegisterBaseAddress;
+    };
+
+    uint32_t TableSize = sizeof(DmarHeader) + sizeof(DrhdEntry);
+    uint8_t Table[sizeof(DmarHeader) + sizeof(DrhdEntry)] = { 0 };
+
+    auto* Hdr = (DmarHeader*)Table;
+    Hdr->Signature = 0x52414D44;   // "DMAR"
+    Hdr->Length = TableSize;
+    Hdr->Revision = 1;
+    memcpy(Hdr->OemId, "KEVLAR", 6);
+    memcpy(Hdr->OemTableId, "KEVLAR-IOMMU", 12);
+    Hdr->OemRevision = 1;
+    Hdr->CreatorId = 0x524C564B;   // "KVLAR"
+    Hdr->CreatorRevision = 1;
+
+    auto* Drhd = (DrhdEntry*)(Table + sizeof(DmarHeader));
+    Drhd->Type = 0;                  // DRHD
+    Drhd->Length = sizeof(DrhdEntry);
+    Drhd->Flags = 0;
+    Drhd->SegmentNumber = 0;
+    Drhd->RegisterBaseAddress = 0xFED90000;
+
+    uint8_t Sum = 0;
+    for (uint32_t I = 0; I < TableSize; I++) Sum += Table[I];
+    Hdr->Checksum = (uint8_t)(0x100 - Sum);   // ACPI checksum: all bytes sum to zero
+
+    uint64_t TableUcAddr = UnicornMem::AllocateVariable(UnicornEmu::PrimaryEngine, TableSize, "DMAR");
+    if (!TableUcAddr) return STATUS_INSUFFICIENT_RESOURCES;
+    memcpy(UnicornMem::UcToHost(TableUcAddr), Table, TableSize);
+
+    *HostOutTable = (PVOID)TableUcAddr;   // guest VA, mapped (was: host VA into guest memory)
+    *HostOutSize = TableSize;
+    return STATUS_SUCCESS;
 }
 
 static uint64_t h_DbgSetDebugPrintCallback(uint64_t Callback, uint64_t Enable) {
@@ -323,6 +400,7 @@ void ntoskrnl_provider::Initialize() {
     Provider::AddFuncImpl("KeRegisterBugCheckReasonCallback", h_KeRegisterBugCheckReasonCallback);
     Provider::AddFuncImpl("KeDeregisterBugCheckReasonCallback", h_KeDeregisterBugCheckReasonCallback);
     Provider::AddFuncImpl("KfRaiseIrql", h_KfRaiseIrql);
+    Provider::AddFuncImpl("KeRaiseIrql", h_KeRaiseIrql);
     Provider::AddFuncImpl("KeLowerIrql", h_KeLowerIrql);
     Provider::AddFuncImpl("KfLowerIrql", h_KfLowerIrql);
     Provider::AddFuncImpl("ExAllocatePool2", h_ExAllocatePool2);
@@ -358,6 +436,8 @@ void ntoskrnl_provider::Initialize() {
     Provider::AddFuncImpl("RtlImageNtHeader", h_RtlImageNtHeader);
     Provider::AddFuncImpl("IoCreateNotificationEvent", h_IoCreateNotificationEvent);
     Provider::AddFuncImpl("KeInitializeDpc", h_KeInitializeDpc);
+    Provider::AddFuncImpl("KeInsertQueueDpc", h_KeInsertQueueDpc);
+    Provider::AddFuncImpl("KeRemoveQueueDpc", h_KeRemoveQueueDpc);
     Provider::AddFuncImpl("KeFlushQueuedDpcs", h_KeFlushQueuedDpcs);
     Provider::AddFuncImpl("ObDereferenceObjectDeferDelete", h_ObDereferenceObjectDeferDelete);
     Provider::AddFuncImpl("MmMapLockedPagesSpecifyCache", h_MmMapLockedPagesSpecifyCache);
@@ -408,6 +488,7 @@ void ntoskrnl_provider::Initialize() {
     Provider::AddFuncImpl("KeUnstackDetachProcess", h_KeUnstackDetachProcess);
     Provider::AddFuncImpl("KeInitializeApc", h_KeInitializeApc);
     Provider::AddFuncImpl("KeInsertQueueApc", h_KeInsertQueueApc);
+    Provider::AddFuncImpl("KeRemoveQueueApc", h_KeRemoveQueueApc);
     Provider::AddFuncImpl("KeTestAlertThread", h_KeTestAlertThread);
     Provider::AddFuncImpl("MmUnmapViewOfSection", h_MmUnmapViewOfSection);
     Provider::AddFuncImpl("PsSuspendProcess", h_PsSuspendProcess);

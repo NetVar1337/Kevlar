@@ -1,5 +1,6 @@
 #include "include/common.h"
 #include "ke_event.h"
+#include "ke_misc.h"
 
 void h_KeInitializeEvent(_KEVENT* Event, _EVENT_TYPE Type, BOOLEAN State) {
     auto HostPtr = UnicornMem::UcToHost((uint64_t)Event);
@@ -68,6 +69,8 @@ void h_KeClearEvent(_KEVENT* Event) {
 
 NTSTATUS h_KeWaitForSingleObject(PVOID Object, void* WaitReason, void* WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout) {
 
+    DeliverPendingApcs();   // kernel APCs deliver at PASSIVE waits
+
     auto Handle = HandleManager::GetHandle((uintptr_t)Object);
     if (!Handle) {
         Logger::Log("{YEL}\tKeWaitForSingleObject: no handle for object %llx -> returning success{RESET}\n", Object);
@@ -128,6 +131,8 @@ NTSTATUS h_KeWaitForSingleObject(PVOID Object, void* WaitReason, void* WaitMode,
 
 
 NTSTATUS h_KeWaitForMutextObject(PVOID Object, void* WaitReason, void* WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout) {
+    DeliverPendingApcs();
+
     HANDLE HostMutex = nullptr;
     {
         std::lock_guard<std::mutex> Guard(MutexManager::MutexLock);
@@ -190,20 +195,37 @@ NTSTATUS h_KeWaitForMutextObject(PVOID Object, void* WaitReason, void* WaitMode,
     return STATUS_SUCCESS;
 }
 
+// Map a WaitForMultipleObjects result back to the original object index.
+static NTSTATUS WaitResultToStatus(DWORD Ret, ULONG* OrigIndex, ULONG ValidCount, BOOL WaitAll) {
+    if (Ret == WAIT_TIMEOUT || Ret == WAIT_FAILED)
+        return (Ret == WAIT_TIMEOUT) ? STATUS_TIMEOUT : STATUS_SUCCESS;
+    ULONG Idx = Ret - WAIT_OBJECT_0;
+    if (Idx >= ValidCount)
+        return STATUS_SUCCESS;
+    return WaitAll ? STATUS_SUCCESS : (STATUS_WAIT_0 + OrigIndex[Idx]);
+}
+
 NTSTATUS
 h_KeWaitForMultipleObjects(ULONG Count, PVOID Object[], uint32_t WaitType, _KWAIT_REASON WaitReason, uint32_t WaitMode, BOOLEAN Alertable,
     PLARGE_INTEGER Timeout, _KWAIT_BLOCK* WaitBlockArray) {
+    DeliverPendingApcs();
+
     auto HostObjArray = UcPtr(Object);
     HANDLE* HandleList = (HANDLE*)malloc(sizeof(HANDLE) * Count);
+    ULONG* OrigIndex = (ULONG*)malloc(sizeof(ULONG) * Count);
     ULONG ValidCount = 0;
     for (ULONG I = 0; I < Count; I++) {
         auto H = HandleManager::GetHandle((uintptr_t)HostObjArray[I]);
-        if (H)
-            HandleList[ValidCount++] = (HANDLE)H;
+        if (H) {
+            HandleList[ValidCount] = (HANDLE)H;
+            OrigIndex[ValidCount] = I;
+            ValidCount++;
+        }
     }
 
     if (ValidCount == 0) {
         free(HandleList);
+        free(OrigIndex);
         return STATUS_SUCCESS;
     }
 
@@ -238,8 +260,10 @@ h_KeWaitForMultipleObjects(ULONG Count, PVOID Object[], uint32_t WaitType, _KWAI
             InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
 
             if (Ret != WAIT_TIMEOUT) {
+                NTSTATUS St = WaitResultToStatus(Ret, OrigIndex, ValidCount, WaitAll);
                 free(HandleList);
-                return STATUS_SUCCESS;
+                free(OrigIndex);
+                return St;
             }
 
             RetryCount++;
@@ -257,10 +281,8 @@ h_KeWaitForMultipleObjects(ULONG Count, PVOID Object[], uint32_t WaitType, _KWAI
     QueryPerformanceCounter(&PostWait);
     InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
 
+    NTSTATUS FinalSt = WaitResultToStatus(Ret, OrigIndex, ValidCount, WaitAll);
     free(HandleList);
-
-    if (Ret == WAIT_TIMEOUT)
-        return 0x00000102;
-
-    return STATUS_SUCCESS;
+    free(OrigIndex);
+    return FinalSt;
 }
