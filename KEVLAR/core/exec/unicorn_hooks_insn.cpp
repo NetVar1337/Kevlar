@@ -1041,11 +1041,17 @@ void UnicornEmu::Hooks::OnRdmsr(uc_engine* Uc, void* UserData) {
     }
 
     if (MsrId == 0x3A) {
-        Value = 0x1;
+        // IA32_FEATURE_CONTROL: lock (bit0) + VMXON outside SMX (bit2). Coherent
+        // with CPUID.1:ECX[5] (VMX advertised) so virtualization pre-condition
+        // checks see an enabled platform. VT-d advertisement itself is the DMAR
+        // table; this is the CPU/MSR surface that backs it up.
+        Value = 0x5;
     }
 
     if (MsrId >= 0x480 && MsrId <= 0x48D) {
-        Value = 0;
+        Value = (MsrId == 0x480)
+            ? 0x0002100000000001ULL  // IA32_VMX_BASIC: VMCS rev 1, VMXON region 4KB, 64-bit host
+            : 0;
     }
 
     if (MsrId == 0xC0010114) {

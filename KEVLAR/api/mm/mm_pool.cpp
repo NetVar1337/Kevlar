@@ -64,7 +64,7 @@ PVOID k_MmMapIoSpaceEx(
             if (!HostBuf) return nullptr;
             memset(HostBuf, 0, Size);
             *(volatile uint32_t*)((uint8_t*)HostBuf + 0x00) = 0x10;      // VERSION: 1.0
-            *(volatile uint64_t*)((uint8_t*)HostBuf + 0x08) = 0x2000000000000080ULL; // CAP: coherent + 2^16 domains
+            *(volatile uint64_t*)((uint8_t*)HostBuf + 0x08) = 0x200000000000000FULL; // CAP: coherent + ND=0xF (2^16 domains)
             *(volatile uint32_t*)((uint8_t*)HostBuf + 0x10) = 0;         // ECMD: all off
             *(volatile uint32_t*)((uint8_t*)HostBuf + 0x14) = 0;         // GSTS: no translation enabled
             *(volatile uint64_t*)((uint8_t*)HostBuf + 0x20) = 0;         // RTADDR: root table not set
