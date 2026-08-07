@@ -8,6 +8,7 @@
 #include "core/exec/unicorn_engine.h"
 #include "core/memory/unicorn_memory.h"
 #include "core/loader/environment.h"
+#include "include/kernel_layout_consume.h"
 
 #include "host/providers/ntoskrnl_provider.h"
 
@@ -49,8 +50,8 @@ void PopulateKernelStructs() {
     FakeKernelThread.Tcb.Process = (_KPROCESS*)EPROCESS_BASE_UC;
     FakeKernelThread.Tcb.ApcState.Process = (_KPROCESS*)EPROCESS_BASE_UC;
 
-    FakeKernelThread.Cid.UniqueProcess = (void*)4;
-    FakeKernelThread.Cid.UniqueThread = (void*)0x8;
+    EthreadCid(&FakeKernelThread)->UniqueProcess = (void*)4;
+    EthreadCid(&FakeKernelThread)->UniqueThread = (void*)0x8;
 
     FakeKernelThread.Tcb.PreviousMode = 0;
     FakeKernelThread.Tcb.State = 1;
@@ -61,10 +62,10 @@ void PopulateKernelStructs() {
     FakeKernelThread.Tcb.LockEntries = (_KLOCK_ENTRY*)22;
     FakeKernelThread.Tcb.MiscFlags |= 0x400;
 
-    FakeSystemProcess.UniqueProcessId = (void*)4;
-    FakeSystemProcess.Protection.Level = 7;
-    FakeSystemProcess.WoW64Process = nullptr;
-    FakeSystemProcess.CreateTime.QuadPart = GetTickCount64();
+    *EprocUniqueProcessId(&FakeSystemProcess) = (void*)4;
+    *EprocProtection(&FakeSystemProcess) = 7;
+    *EprocWow64Process(&FakeSystemProcess) = nullptr;
+    EprocCreateTime(&FakeSystemProcess)->QuadPart = GetTickCount64();
 
     FakeCPU.CurrentThread = (_KTHREAD*)ETHREAD_BASE_UC;
     FakeCPU.IdleThread = (_KTHREAD*)ETHREAD_BASE_UC;
@@ -85,7 +86,7 @@ void PopulateKernelStructs() {
         FakeCPU.ProcessorSignature = 0x000B0671;
     }
 
-    FakeKPCR.CurrentPrcb = (_KPRCB*)(KPCR_BASE_UC + 0x180);
+    FakeKPCR.CurrentPrcb = (_KPRCB*)(KPCR_BASE_UC + KPCR_PRCB_OFFSET);
     FakeKPCR.NtTib.StackBase = (PVOID)(STACK_BASE_UC + STACK_SIZE_UC);
     FakeKPCR.NtTib.StackLimit = (PVOID)STACK_BASE_UC;
     FakeKPCR.MajorVersion = 10;

@@ -1,10 +1,11 @@
 #include "include/common.h"
+#include "include/kernel_layout_consume.h"
 #include "ke_misc.h"
 
 _ETHREAD* h_KeGetCurrentThread() { return UnicornThread::GetCurrentEthread(); }
 
-// ApcDisable lives at ETHREAD+0x1E4 (the offset h_KeLeaveCriticalRegionThread already uses).
-static constexpr size_t ETHREAD_APC_DISABLE_OFFSET = 0x1E4;
+// ApcDisable lives at KTHREAD.KernelApcDisable (ETHREAD+0x1E4 on the target build).
+static constexpr size_t ETHREAD_APC_DISABLE_OFFSET = (size_t)ETHREAD_APC_DISABLE;
 static SHORT* ApcDisableField(_ETHREAD* Thread) {
     return (SHORT*)((uint8_t*)Thread + ETHREAD_APC_DISABLE_OFFSET);
 }

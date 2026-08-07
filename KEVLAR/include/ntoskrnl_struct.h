@@ -574,6 +574,11 @@ struct _KTHREAD {
     LONG SchedulerAssistPriorityFloor; //0x400
     ULONG Spare28; //0x404
     ULONGLONG EndPadding[5]; //0x408
+    // Tail padding to the target PDB KTHREAD size (0x4c0 on the cached 26100
+    // build; matches GEN__KTHREAD_StructSize). ETHREAD embeds this as Tcb, so every
+    // post-Tcb ETHREAD field lands at the generated offset. The static_assert in
+    // kernel_layout_consume.h fails the build if this drifts.
+    uint8_t _PadKthreadTail[0x4c0 - 0x430]; //0x430
 };
 
 struct _PRIMITIVE_UNICODE_STRING {

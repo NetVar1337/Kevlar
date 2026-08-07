@@ -1,4 +1,5 @@
 #include "include/common.h"
+#include "include/kernel_layout_consume.h"
 #include "ps_process.h"
 #include <unordered_map>
 #include <mutex>
@@ -10,8 +11,8 @@ static std::unordered_map<uint64_t, uint64_t> FakeProcessMap;
 
 PVOID h_PsGetProcessWow64Process(_EPROCESS* Process) {
     auto HostProc = UcPtr(Process);
-    Logger::Log("{CYN}\tRequesting WoW64 for process : %llx (id : %llx){RESET}\n", (const PVOID)Process, HostProc->UniqueProcessId);
-    return HostProc->WoW64Process;
+    Logger::Log("{CYN}\tRequesting WoW64 for process : %llx (id : %llx){RESET}\n", (const PVOID)Process, *EprocUniqueProcessId(HostProc));
+    return *EprocWow64Process(HostProc);
 }
 
 static std::unordered_map<uint64_t, uint64_t> FakeThreadMap;
@@ -59,10 +60,10 @@ NTSTATUS h_PsLookupThreadByThreadId(HANDLE ThreadId, PVOID* Thread) {
 
     auto HostEthread = (_ETHREAD*)UnicornMem::UcToHost(UcAddr);
     memset(HostEthread, 0, sizeof(_ETHREAD));
-    HostEthread->Cid.UniqueProcess = (HANDLE)4;
-    HostEthread->Cid.UniqueThread = (HANDLE)(uintptr_t)Tid;
-    HostEthread->Tcb.Process = (_KPROCESS*)EPROCESS_BASE_UC;
-    HostEthread->Tcb.ApcState.Process = (_KPROCESS*)EPROCESS_BASE_UC;
+    EthreadCid(HostEthread)->UniqueProcess = (HANDLE)4;
+    EthreadCid(HostEthread)->UniqueThread = (HANDLE)(uintptr_t)Tid;
+    *(void**)((uint8_t*)HostEthread + ETHREAD_Tcb_Process) = (void*)EPROCESS_BASE_UC;
+    *(void**)((uint8_t*)HostEthread + ETHREAD_Tcb_ApcState_Process) = (void*)EPROCESS_BASE_UC;
 
     uint64_t ThreadWlh = UcAddr + offsetof(_ETHREAD, Tcb.Header.WaitListHead);
     HostEthread->Tcb.Header.WaitListHead.Flink = (PLIST_ENTRY)ThreadWlh;
@@ -87,7 +88,7 @@ NTSTATUS h_PsLookupThreadByThreadId(HANDLE ThreadId, PVOID* Thread) {
 HANDLE h_PsGetThreadId(_ETHREAD* Thread) {
     if (Thread) {
         auto HostThread = UcPtr(Thread);
-        return HostThread->Cid.UniqueThread;
+        return EthreadCid(HostThread)->UniqueThread;
     }
     return 0;
 }
@@ -105,7 +106,7 @@ HANDLE h_PsGetProcessInheritedFromUniqueProcessId(_EPROCESS* Process) {
 LONGLONG h_PsGetProcessCreateTimeQuadPart(_EPROCESS* process) {
     auto HostProc = UcPtr(process);
     Logger::Log("{GRY}\t\tTrying to get creation time for %llx{RESET}\n", (const void*)process);
-    return HostProc->CreateTime.QuadPart;
+    return EprocCreateTime(HostProc)->QuadPart;
 }
 
 NTSTATUS h_PsLookupProcessByProcessId(HANDLE ProcessId, _EPROCESS** Process) {
@@ -136,11 +137,11 @@ NTSTATUS h_PsLookupProcessByProcessId(HANDLE ProcessId, _EPROCESS** Process) {
 
     auto HostEproc = (_EPROCESS*)UnicornMem::UcToHost(UcAddr);
     memset(HostEproc, 0, sizeof(_EPROCESS));
-    HostEproc->UniqueProcessId = (void*)Pid;
-    HostEproc->Protection.Level = 0;
-    HostEproc->WoW64Process = nullptr;
-    HostEproc->CreateTime.QuadPart = GetTickCount64();
-    memcpy(HostEproc->ImageFileName, "svchost.exe", 12);
+    *EprocUniqueProcessId(HostEproc) = (void*)Pid;
+    *EprocProtection(HostEproc) = 0;
+    *EprocWow64Process(HostEproc) = nullptr;
+    EprocCreateTime(HostEproc)->QuadPart = GetTickCount64();
+    memcpy(EprocImageFileName(HostEproc), "svchost.exe", 12);
     uint64_t ProcWlhUcAddr = UcAddr + offsetof(_EPROCESS, Pcb.Header.WaitListHead);
     HostEproc->Pcb.Header.WaitListHead.Flink = (PLIST_ENTRY)ProcWlhUcAddr;
     HostEproc->Pcb.Header.WaitListHead.Blink = (PLIST_ENTRY)ProcWlhUcAddr;
@@ -161,7 +162,7 @@ HANDLE h_PsGetProcessId(_EPROCESS* Process) {
         return 0;
 
     auto HostProc = UcPtr(Process);
-    return HostProc->UniqueProcessId;
+    return *EprocUniqueProcessId(HostProc);
 }
 
 _EPROCESS* h_PsGetCurrentProcess() {
@@ -173,21 +174,21 @@ _EPROCESS* h_PsGetCurrentProcess() {
 
 _EPROCESS* h_PsGetCurrentThreadProcess() { return (_EPROCESS*)h_KeGetCurrentThread()->Tcb.Process; }
 
-HANDLE h_PsGetCurrentThreadId() { return h_KeGetCurrentThread()->Cid.UniqueThread; }
+HANDLE h_PsGetCurrentThreadId() { return EthreadCid(h_KeGetCurrentThread())->UniqueThread; }
 
 HANDLE h_PsGetCurrentThreadProcessId() {
     //Logger::Log("About to do stuff\n");
-    auto meh = h_KeGetCurrentThread()->Cid.UniqueProcess;
+    auto meh = EthreadCid(h_KeGetCurrentThread())->UniqueProcess;
     //Logger::Log("Done\n");
     return meh;
 }
 
 bool h_PsIsProtectedProcess(_EPROCESS* process) {
     auto HostProc = UcPtr(process);
-    if (HostProc->UniqueProcessId == (PVOID)4) {
+    if (*EprocUniqueProcessId(HostProc) == (PVOID)4) {
         return true;
     }
-    return (HostProc->Protection.Level & 7) != 0;
+    return (*EprocProtection(HostProc) & 7) != 0;
 }
 
 PACCESS_TOKEN h_PsReferencePrimaryToken(_EPROCESS* Process) {
@@ -257,7 +258,7 @@ NTSTATUS h_PsSetLoadImageNotifyRoutine(PVOID NotifyRoutine) { return STATUS_SUCC
 HANDLE h_PsGetThreadProcessId(_ETHREAD* Thread) {
     if (Thread) {
         auto HostThread = UcPtr(Thread);
-        return HostThread->Cid.UniqueProcess;
+        return EthreadCid(HostThread)->UniqueProcess;
     }
     return 0;
 }
@@ -273,7 +274,7 @@ HANDLE h_PsGetThreadProcess(_ETHREAD* Thread) {
 char* h_PsGetProcessImageFileName(_EPROCESS* Process) {
     static char FakeImageName[16] = "System";
     auto HostProc = UcPtr(Process);
-    if (HostProc->UniqueProcessId == (HANDLE)4) {
+    if (*EprocUniqueProcessId(HostProc) == (HANDLE)4) {
         return FakeImageName;
     }
     return FakeImageName;
@@ -324,7 +325,7 @@ NTSTATUS h_PsAcquireProcessExitSynchronization(_EPROCESS* Process) {
     if (!HostProc)
         return STATUS_PROCESS_IS_TERMINATING;
 
-    auto RunRef = reinterpret_cast<volatile LONG64*>(reinterpret_cast<uint8_t*>(HostProc) + 0x458);
+    auto RunRef = reinterpret_cast<volatile LONG64*>((uint8_t*)HostProc + EPROCESS_RUNDOWN_PROTECT);
 
     return ExAcquireRundownProtectionImpl(RunRef) ? STATUS_SUCCESS : STATUS_PROCESS_IS_TERMINATING; // 0xC000010A
 }
@@ -334,7 +335,7 @@ void h_PsReleaseProcessExitSynchronization(_EPROCESS* Process) {
     if (!HostProc)
         return;
 
-    auto RunRef = reinterpret_cast<volatile LONG64*>(reinterpret_cast<uint8_t*>(HostProc) + 0x458);
+    auto RunRef = reinterpret_cast<volatile LONG64*>((uint8_t*)HostProc + EPROCESS_RUNDOWN_PROTECT);
 
     ExReleaseRundownProtectionImpl(RunRef);
 }

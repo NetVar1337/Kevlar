@@ -4,6 +4,7 @@
 #include "core/memory/unicorn_memory.h"
 #include "host/providers/ntoskrnl_provider.h"
 #include "include/ntoskrnl_struct.h"
+#include "include/kernel_layout_consume.h"
 #include "core/loader/environment.h"
 #include <Logger/Logger.h>
 #include <malloc.h>
@@ -104,8 +105,8 @@ ThreadContext* UnicornThread::Create(uint64_t StartRoutine, uint64_t StartContex
     memset(Ctx->EthreadHostPtr, 0, sizeof(_ETHREAD));
     Ctx->EthreadHostPtr->Tcb.Process = (_KPROCESS*)EPROCESS_BASE_UC;
     Ctx->EthreadHostPtr->Tcb.ApcState.Process = (_KPROCESS*)EPROCESS_BASE_UC;
-    Ctx->EthreadHostPtr->Cid.UniqueProcess = (void*)4;
-    Ctx->EthreadHostPtr->Cid.UniqueThread = (void*)(uintptr_t)Ctx->ThreadId;
+    EthreadCid(Ctx->EthreadHostPtr)->UniqueProcess = (void*)4;
+    EthreadCid(Ctx->EthreadHostPtr)->UniqueThread = (void*)(uintptr_t)Ctx->ThreadId;
     Ctx->EthreadHostPtr->Tcb.PreviousMode = 0;
     Ctx->EthreadHostPtr->Tcb.State = 1;
     Ctx->EthreadHostPtr->Tcb.MiscFlags |= 0x400;
@@ -167,14 +168,14 @@ ThreadContext* UnicornThread::Create(uint64_t StartRoutine, uint64_t StartContex
     }
 
     uint64_t EthreadAddr = Ctx->EthreadUcAddr;
-    memcpy(PerThreadKpcr + 0x188, &EthreadAddr, 8);
+    memcpy(PerThreadKpcr + KPCR_PRCB_OFFSET + KPRCB_CURRENT_THREAD, &EthreadAddr, 8);
 
     memcpy(PerThreadKpcr + 0x18, &ThreadKpcrAddr, 8);
 
     uint64_t KprcbAddr = ThreadKpcrAddr + 0x180;
     memcpy(PerThreadKpcr + 0x20, &KprcbAddr, 8);
 
-    uint64_t KprcbCurrentThreadOffset = 0x180 + 0x8;
+    uint64_t KprcbCurrentThreadOffset = KPCR_PRCB_OFFSET + KPRCB_CURRENT_THREAD;
     memcpy(PerThreadKpcr + KprcbCurrentThreadOffset, &EthreadAddr, 8);
 
     uc_reg_write(Ctx->Engine, UC_X86_REG_GS_BASE, &ThreadKpcrAddr);
@@ -234,8 +235,8 @@ static ThreadContext* CreateExImpl(uint64_t StartRoutine, uint64_t Arg1, uint64_
     memset(Ctx->EthreadHostPtr, 0, sizeof(_ETHREAD));
     Ctx->EthreadHostPtr->Tcb.Process = (_KPROCESS*)EPROCESS_BASE_UC;
     Ctx->EthreadHostPtr->Tcb.ApcState.Process = (_KPROCESS*)EPROCESS_BASE_UC;
-    Ctx->EthreadHostPtr->Cid.UniqueProcess = (void*)4;
-    Ctx->EthreadHostPtr->Cid.UniqueThread = (void*)(uintptr_t)Ctx->ThreadId;
+    EthreadCid(Ctx->EthreadHostPtr)->UniqueProcess = (void*)4;
+    EthreadCid(Ctx->EthreadHostPtr)->UniqueThread = (void*)(uintptr_t)Ctx->ThreadId;
     Ctx->EthreadHostPtr->Tcb.PreviousMode = 0;
     Ctx->EthreadHostPtr->Tcb.State = 1;
     Ctx->EthreadHostPtr->Tcb.MiscFlags |= 0x400;
@@ -279,13 +280,13 @@ static ThreadContext* CreateExImpl(uint64_t StartRoutine, uint64_t Arg1, uint64_
     uc_mem_map_ptr(Ctx->Engine, ThreadKpcrAddr, 0x10000, UC_PROT_ALL, PerThreadKpcr);
 
     uint64_t EthreadAddr = Ctx->EthreadUcAddr;
-    memcpy(PerThreadKpcr + 0x188, &EthreadAddr, 8);
+    memcpy(PerThreadKpcr + KPCR_PRCB_OFFSET + KPRCB_CURRENT_THREAD, &EthreadAddr, 8);
     memcpy(PerThreadKpcr + 0x18, &ThreadKpcrAddr, 8);
 
     uint64_t KprcbAddr = ThreadKpcrAddr + 0x180;
     memcpy(PerThreadKpcr + 0x20, &KprcbAddr, 8);
 
-    uint64_t KprcbCurrentThreadOffset = 0x180 + 0x8;
+    uint64_t KprcbCurrentThreadOffset = KPCR_PRCB_OFFSET + KPRCB_CURRENT_THREAD;
     memcpy(PerThreadKpcr + KprcbCurrentThreadOffset, &EthreadAddr, 8);
 
     uc_reg_write(Ctx->Engine, UC_X86_REG_GS_BASE, &ThreadKpcrAddr);

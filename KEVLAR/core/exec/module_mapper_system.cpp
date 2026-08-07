@@ -6,6 +6,7 @@
 #include "host/providers/ntoskrnl_provider.h"
 #include "host/providers/provider.h"
 #include "core/loader/environment.h"
+#include "include/kernel_layout_consume.h"
 #include "core/memory/unicorn_memory.h"
 #include <malloc.h>
 
@@ -97,14 +98,14 @@ uint64_t UnicornEmu::MapKernelStructs() {
     uint64_t KpcrAddr = KPCR_BASE_UC;
     uc_mem_write(PrimaryEngine, KPCR_BASE_UC + 0x18, &KpcrAddr, 8);
 
-    uint64_t KprcbAddr = KPCR_BASE_UC + 0x180;
+    uint64_t KprcbAddr = KPCR_BASE_UC + KPCR_PRCB_OFFSET;
     uc_mem_write(PrimaryEngine, KPCR_BASE_UC + 0x20, &KprcbAddr, 8);
 
     uint64_t IdtAddr = IDT_BASE_UC;
     uc_mem_write(PrimaryEngine, KPCR_BASE_UC + 0x38, &IdtAddr, 8);
 
     uint64_t EthreadAddr = ETHREAD_BASE_UC;
-    uc_mem_write(PrimaryEngine, KPCR_BASE_UC + 0x188, &EthreadAddr, 8);
+    uc_mem_write(PrimaryEngine, KPCR_BASE_UC + KPCR_PRCB_OFFSET + KPRCB_CURRENT_THREAD, &EthreadAddr, 8);
 
     uint64_t EthreadSize = 0x10000;
     EthreadBlock = _aligned_malloc((size_t)EthreadSize, 0x1000);
@@ -118,8 +119,8 @@ uint64_t UnicornEmu::MapKernelStructs() {
     MapRegionPtr(PrimaryEngine, ETHREAD_BASE_UC, EthreadSize, UC_PROT_ALL, EthreadBlock, "ETHREAD");
 
     uint64_t EprocessAddr = EPROCESS_BASE_UC;
-    uc_mem_write(PrimaryEngine, ETHREAD_BASE_UC + 0x220, &EprocessAddr, 8);
-    uc_mem_write(PrimaryEngine, ETHREAD_BASE_UC + 0xB8, &EprocessAddr, 8);
+    uc_mem_write(PrimaryEngine, ETHREAD_BASE_UC + ETHREAD_Tcb_Process, &EprocessAddr, 8);
+    uc_mem_write(PrimaryEngine, ETHREAD_BASE_UC + ETHREAD_Tcb_ApcState_Process, &EprocessAddr, 8);
 
     uint64_t EprocessSize = 0x10000;
     EprocessBlock = _aligned_malloc((size_t)EprocessSize, 0x1000);
