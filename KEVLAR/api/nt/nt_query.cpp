@@ -891,9 +891,17 @@ NTSTATUS h_NtQuerySystemInformation(uint32_t SystemInformationClass, uintptr_t S
             return x;
         }
 
-        ULONG CopyLen = SystemInformationLength;
-        if (CopyLen > ApiBufSize) CopyLen = ApiBufSize;
-        WriteBuf(ApiBuf, CopyLen);
+        // Real Windows returns STATUS_INFO_LENGTH_MISMATCH when the caller's buffer is
+        // smaller than the required size and reports the required size in ReturnLength.
+        // Copying only min(len, required) with STATUS_SUCCESS broke the standard two-phase
+        // size probe (call tiny buffer, read required size, call again) that drivers like
+        // FACEIT_IOMMU use for SystemThreadInformation.
+        if (SystemInformationLength < ApiRetLen) {
+            WriteRetLen(ApiRetLen);
+            free(ApiBuf);
+            return STATUS_INFO_LENGTH_MISMATCH;
+        }
+        WriteBuf(ApiBuf, ApiRetLen);
     } else if (x == STATUS_BUFFER_OVERFLOW || x == STATUS_INFO_LENGTH_MISMATCH) {
         WriteRetLen(ApiRetLen);
     }
