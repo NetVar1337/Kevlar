@@ -68,20 +68,35 @@ def build_driver(with_import=False):
     #   0x1020: mov eax, 0xC0000001              ; STATUS_UNSUCCESSFUL
     #   0x1025: add rsp, 0x28
     #   0x1029: ret
+    #
+    # CPUID probe first (the FACEIT_IOMMU surface): leaf 0x1 feature bits and the
+    # 0x40000000 hypervisor leaf. The harness logs both under --diag; the coherent
+    # profile must present bare metal (ECX.31=0, empty hypervisor leaves) or the
+    # driver-level checks that rejected FACEIT_IOMMU.sys fire again.
     code = bytearray()
     code += bytes([0x48, 0x83, 0xEC, 0x28])                                       # sub rsp,0x28
+    code += bytes([0xB8, 0x01, 0x00, 0x00, 0x00])                                 # mov eax,1
+    code += bytes([0x0F, 0xA2])                                                   # cpuid  (leaf 0x1)
+    code += bytes([0xB8, 0x00, 0x00, 0x00, 0x40])                                 # mov eax,0x40000000
+    code += bytes([0x0F, 0xA2])                                                   # cpuid  (hypervisor leaf)
     code += bytes([0x65, 0x48, 0x8B, 0x04, 0x25, 0x20, 0x00, 0x00, 0x00])         # mov rax, gs:[0x20]
     code += bytes([0x48, 0x85, 0xC0])                                             # test rax,rax
-    code += bytes([0x74, 0x0E])                                                   # jz fail
+    code += bytes([0x74, 0x00])                                                   # jz fail (rel patched below)
     code += bytes([0x31, 0xC0])                                                   # xor eax,eax
     code += bytes([0x48, 0x83, 0xC4, 0x28])                                       # add rsp,0x28
     code += bytes([0xC3])                                                         # ret
-    code += b"\x00" * (0x20 - len(code))
-    code += bytes([0xB8, 0x01, 0x00, 0x00, 0xC0])                                 # mov eax,0xC0000001
-    code += bytes([0x48, 0x83, 0xC4, 0x28])                                       # add rsp,0x28
-    code += bytes([0xC3])                                                         # ret
+    fail = bytearray()
+    fail += bytes([0xB8, 0x01, 0x00, 0x00, 0xC0])                                 # mov eax,0xC0000001
+    fail += bytes([0x48, 0x83, 0xC4, 0x28])                                       # add rsp,0x28
+    fail += bytes([0xC3])                                                         # ret
+    jz_pos = code.index(0x74)
+    code[jz_pos + 1] = (len(code) - (jz_pos + 2)) & 0xFF   # target = fail start (len(code))
+    code += fail
 
     data = bytearray(code)
+    if with_import:
+        data += b"\x00" * (0x100 - len(data))  # pad to the import table RVA
+        data += import_table()
     raw_size = align(len(data), FILE_ALIGN)
     data += b"\x00" * (raw_size - len(data))
     size_of_image = align(SECTION_RVA + raw_size, 0x1000)

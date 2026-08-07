@@ -173,7 +173,17 @@ Before compatibility work, the locally tested FACEIT drivers both reached their 
 | `FACEIT_AC.sys` | `8b26feff7fc5f75b5eaad42e99b4d9c5b6cd779c408e5d882b5549e6de15b6d9` | `DriverEntry → 0xC0EB0001` |
 | `FACEIT_IOMMU.sys` | `86f93b3b6d899ec7cd3250866fe22251b875a4de2965da642e0a4f2e2ac91f39` | `DriverEntry → 0xC0EB0001` |
 
-Both failures occur after early platform checks involving `InitSafeBootMode`, `KUSER_SHARED_DATA`, CPU feature data and the hypervisor CPUID range. The roadmap now includes a bounded ACPI/PCI/IOMMU model, but it has not been validated against a live `FACEIT_IOMMU.sys` trace, so no FACEIT compatibility claim is made here.
+A captured `FACEIT_IOMMU.sys` trace (`builds/Release/faceit-iommu-run.log`) shows the
+rejection follows the driver's early platform checks: an `InitSafeBootMode` read (0),
+then `CPUID` leaf `0x1` and the hypervisor leaf `0x40000000`. Under the older, host-
+passthrough profile that trace exposed the host's own CPUID (`ECX=0xfffaf38b`, hypervisor
+bit set) and a `Microsoft Hv` hypervisor leaf. The coherent CPU profile now presents a
+bare-metal surface for exactly those reads — leaf `0x1` `ECX=0x7FFAB7FF` (bit 31 clear),
+`0x40000000` empty — verified by the CPUID probe in the smoke driver
+(`make_test_driver.py`, logged under `--diag`). The bounded ACPI/PCI/IOMMU model and the
+VT-d advertisement in the CPUID/MSR surface back the IOMMU path. Re-running a fresh
+`FACEIT_IOMMU.sys` against the current build is still required to confirm the next
+rejection point; no FACEIT compatibility claim is made yet.
 
 ## Project layout
 
@@ -211,6 +221,11 @@ generated/                 # Generated layout headers (pdb_layout output)
 - [x] Model ACPI, PCI and IOMMU state for IOMMU-oriented drivers
 - [x] Add deterministic trace replay and differential validation (`--trace` / `--check`)
 - [x] Add automated smoke tests for PE mapping and emulator initialization (`tests/smoke.ps1`)
+- [x] Fix import-resolution crash and harden PE export/import parsing (`ParseExport` bounds, `GetExport` lookups, null-safe `ResolveImport`)
+- [x] Consume PDB-generated kernel layouts in the harness (`kernel_layout_consume.h`: `GEN_*` fixed-offset accesses, PDB-accurate ETHREAD via KTHREAD padding, drift `static_assert`s)
+- [x] Advertise VT-d/VT-x pre-conditions coherently in the CPUID/MSR surface (`IA32_FEATURE_CONTROL` VMX-enabled, valid `IA32_VMX_BASIC`, sane IOMMU `CAP.ND`)
+- [x] Deliver kernel APCs on the target thread's context, waking wait-blocked threads (per-thread wake events, inline `KernelRoutine`/`NormalRoutine`)
+- [x] Validate the FACEIT CPUID rejection surface against the captured `FACEIT_IOMMU` trace: the coherent profile presents the bare-metal leaf `0x1` / empty `0x40000000` the driver checks (smoke-driver CPUID probe)
 
 ### Scheduler / IRQL / APC / DPC / timer / sync expansion
 
@@ -251,7 +266,11 @@ Automated smoke tests cover PE mapping and emulator initialization end-to-end:
 ```
 
 `tests\make_test_driver.py` emits a minimal x64 native driver (no imports, a KPCR/GS read,
-a conditional branch) that must return `STATUS_SUCCESS` for the test to pass.
+a conditional branch) that must return `STATUS_SUCCESS` for the test to pass. It first runs
+the FACEIT-style CPUID probe (leaf `0x1` + `0x40000000`) so `--diag` runs show the coherent
+bare-metal profile values. `--with-import` adds a single `ntoskrnl.exe!KeInitializeSpinLock`
+import so the full import-resolution path (`ParseExport` on ntoskrnl, `ResolveImport`,
+`BuildSentinelIat`) is exercised end-to-end.
 
 Structure layouts for the actual target ntoskrnl PDB are generated with the DIA SDK:
 
@@ -259,29 +278,48 @@ Structure layouts for the actual target ntoskrnl PDB are generated with the DIA 
 .\tools\pdb_layout.ps1            # -> generated\kernel_layout.h (GEN_<STRUCT>_<FIELD> defines)
 ```
 
-The harness still uses the hardcoded `ntoskrnl_struct.h` layouts; regenerating and consuming
-the generated offsets for a different Windows build is a follow-on.
+The harness consumes these generated offsets through `KEVLAR\include\kernel_layout_consume.h`:
+fixed-offset accesses (KPCR→KPRCB→CurrentThread, ETHREAD→KTHREAD back-pointers, EPROCESS
+rundown-protect, APC-disable) are sourced from the `GEN_*` macros, the synthetic ETHREAD
+layout is kept at the PDB size (KTHREAD tail padding in `ntoskrnl_struct.h`), and
+compile-time `static_assert`s fail the build if a hardcoded struct drifts from the
+generated offsets. Regenerate `generated\kernel_layout.h` after refreshing the target
+ntoskrnl PDB and rebuild.
+
+Remaining structural gap: the hardcoded `_KPROCESS`/`_EPROCESS` bodies predate the target
+build (e.g. `UniqueProcessId` at `0x440` vs `0x1D0` on 26100), so EPROCESS fields other
+than the ones the harness populates through the `GEN_` accessors are not PDB-accurate. The
+harness's providers are self-consistent on those paths; direct driver probing of
+non-populated EPROCESS fields is the known limit. Full accuracy needs `pdb_layout` to
+emit typed struct definitions rather than offsets.
 
 ## Known limitations
 
-- The included kernel structure definitions are based primarily on Windows 10 21H2 x64.
+- The included kernel structure definitions are based primarily on Windows 10 21H2 x64, with
+  the harness-consumed offsets (ETHREAD/KTHREAD/KPCR/KPRCB and the fixed-offset accesses)
+  tracked against the generated layout from the cached ntoskrnl PDB.
 - Many kernel exports are simplified or intentionally stubbed.
 - Unknown return values can alter downstream control flow.
 - Host threads do not perfectly reproduce Windows scheduling and IRQL behavior.
-- Kernel APCs deliver via a host worker thread, so a queued APC targeting a thread that is
-  already blocked in a wait is only seen at that thread's next delivery point, and a kernel
-  APC's `NormalRoutine` runs on the delivery thread, not the target thread's context.
+- Kernel APCs deliver on the target thread's own context: `KernelRoutine`/`NormalRoutine`
+  run inline on the target's engine (current ETHREAD/KPCR/stack are the target's), and a
+  cross-thread APC signals a per-thread wake event so a wait-blocked thread is interrupted
+  and delivers it in its wait loop instead of at an arbitrary future delivery point.
 - The ACPI/PCI/IOMMU model is a bounded baseline: synthetic PCI config, a VT-d `DMAR`
-  table and a coherent `0xFED90000` register block. CPUID/MSR VT-d advertisement is not
-  modeled, and the register set is minimal until a real IOMMU driver trace validates it.
-- PnP, power, DMA, filter stacks and real device behavior are incomplete.
+  table, a coherent `0xFED90000` register block, and a CPUID/MSR surface that advertises
+  the virtualization pre-conditions (`IA32_FEATURE_CONTROL` VMX-enabled, a valid
+  `IA32_VMX_BASIC`). The register set is still minimal until a real IOMMU driver trace
+  validates it.
+- PnP, power, DMA, filter stacks and real device behavior are present but simplified
+  (`IoCreateDevice`, `IoRegisterPlugPlayNotification`, `IofCompleteRequest`, MDL/DMA and
+  contiguous-memory providers exist). They are extended only when a specific target
+  driver is seen exercising a given path.
 - Diagnostic mode can produce large traces and run substantially slower.
-- Import resolution (`PEFile::ResolveImport`) crashes the host when a driver imports from
-  a resolvable `ntoskrnl.exe`: `ParseExport` can record a dangling export-name key in the
-  per-module export map, and `GetExport` on the affected hash bucket faults. The cached
-  `ntoskrnl.exe` is also not always resolvable by the loader, which takes the null-import
-  path. This is pre-existing and surfaced by the smoke-test driver; it must be fixed before
-  any real driver import (EAC/VGK/FACEIT all import ntoskrnl functions).
+- Import resolution is fixed: `ParseExport` bounds-checks every export-table read (no more
+  OOB name reads corrupting the export map), `GetExport`/`GetImport` use single lookups, and
+  `ResolveImport` no longer crashes on a missing import module or ordinal thunk. A driver
+  importing from a real cached `ntoskrnl.exe` resolves its IAT through
+  `BuildSentinelIat`; coverage lives in `make_test_driver.py --with-import`.
 
 ## Credits
 
