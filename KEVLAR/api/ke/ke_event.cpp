@@ -94,19 +94,34 @@ NTSTATUS h_KeWaitForSingleObject(PVOID Object, void* WaitReason, void* WaitMode,
         }
     }
 
+    // Wait on the object and the thread's wake event so a cross-thread kernel APC
+    // (signaled by KeInsertQueueApc) interrupts the wait and is delivered here.
+    HANDLE WakeEvent = KeCurrentWakeEvent();
+
     if (IsInfinite) {
         const DWORD ChunkMs = 5000;
         int RetryCount = 0;
         while (true) {
             LARGE_INTEGER PreWait;
             QueryPerformanceCounter(&PreWait);
-            DWORD WaitResult = WaitForSingleObject((HANDLE)Handle, ChunkMs);
+            DWORD WaitResult;
+            if (WakeEvent) {
+                HANDLE Handles[2] = { (HANDLE)Handle, WakeEvent };
+                ResetEvent(WakeEvent);
+                WaitResult = WaitForMultipleObjects(2, Handles, FALSE, ChunkMs);
+            } else {
+                WaitResult = WaitForSingleObject((HANDLE)Handle, ChunkMs);
+            }
             LARGE_INTEGER PostWait;
             QueryPerformanceCounter(&PostWait);
             InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
 
-            if (WaitResult != WAIT_TIMEOUT)
+            if (WaitResult == WAIT_OBJECT_0)
                 return STATUS_SUCCESS;
+            if (WaitResult == WAIT_OBJECT_0 + 1) {
+                DeliverPendingApcs();   // woken by an APC; resume the wait
+                continue;
+            }
 
             RetryCount++;
             if (RetryCount % 6 == 0) {
@@ -116,12 +131,37 @@ NTSTATUS h_KeWaitForSingleObject(PVOID Object, void* WaitReason, void* WaitMode,
         }
     }
 
-    LARGE_INTEGER PreWait;
-    QueryPerformanceCounter(&PreWait);
-    DWORD WaitResult = WaitForSingleObject((HANDLE)Handle, WaitMs);
-    LARGE_INTEGER PostWait;
-    QueryPerformanceCounter(&PostWait);
-    InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
+    DWORD WaitResult;
+    if (WakeEvent) {
+        // Chunked wait so a cross-thread APC is delivered within ~5s even on a
+        // long finite wait, while still honoring the remaining timeout.
+        LONGLONG RemainingMs = WaitMs;
+        WaitResult = WAIT_TIMEOUT;
+        HANDLE Handles[2] = { (HANDLE)Handle, WakeEvent };
+        while (RemainingMs > 0) {
+            LARGE_INTEGER PreWait;
+            QueryPerformanceCounter(&PreWait);
+            ResetEvent(WakeEvent);
+            DWORD Chunk = (DWORD)((RemainingMs > 5000) ? 5000 : RemainingMs);
+            WaitResult = WaitForMultipleObjects(2, Handles, FALSE, Chunk);
+            LARGE_INTEGER PostWait;
+            QueryPerformanceCounter(&PostWait);
+            InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
+
+            if (WaitResult == WAIT_OBJECT_0)
+                break;
+            if (WaitResult == WAIT_OBJECT_0 + 1)
+                DeliverPendingApcs();   // woken by an APC; keep waiting on the object
+            RemainingMs -= Chunk;
+        }
+    } else {
+        LARGE_INTEGER PreWait;
+        QueryPerformanceCounter(&PreWait);
+        WaitResult = WaitForSingleObject((HANDLE)Handle, WaitMs);
+        LARGE_INTEGER PostWait;
+        QueryPerformanceCounter(&PostWait);
+        InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
+    }
 
     if (WaitResult == WAIT_TIMEOUT)
         return 0x00000102;
@@ -160,19 +200,32 @@ NTSTATUS h_KeWaitForMutextObject(PVOID Object, void* WaitReason, void* WaitMode,
         }
     }
 
+    HANDLE WakeEvent = KeCurrentWakeEvent();
+
     if (IsInfinite) {
         const DWORD ChunkMs = 5000;
         int RetryCount = 0;
         while (true) {
             LARGE_INTEGER PreWait;
             QueryPerformanceCounter(&PreWait);
-            DWORD WaitResult = WaitForSingleObject(HostMutex, ChunkMs);
+            DWORD WaitResult;
+            if (WakeEvent) {
+                HANDLE Handles[2] = { HostMutex, WakeEvent };
+                ResetEvent(WakeEvent);
+                WaitResult = WaitForMultipleObjects(2, Handles, FALSE, ChunkMs);
+            } else {
+                WaitResult = WaitForSingleObject(HostMutex, ChunkMs);
+            }
             LARGE_INTEGER PostWait;
             QueryPerformanceCounter(&PostWait);
             InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
 
-            if (WaitResult != WAIT_TIMEOUT)
+            if (WaitResult == WAIT_OBJECT_0)
                 return STATUS_SUCCESS;
+            if (WaitResult == WAIT_OBJECT_0 + 1) {
+                DeliverPendingApcs();
+                continue;
+            }
 
             RetryCount++;
             if (RetryCount % 6 == 0) {
@@ -182,12 +235,35 @@ NTSTATUS h_KeWaitForMutextObject(PVOID Object, void* WaitReason, void* WaitMode,
         }
     }
 
-    LARGE_INTEGER PreWait;
-    QueryPerformanceCounter(&PreWait);
-    DWORD WaitResult = WaitForSingleObject(HostMutex, WaitMs);
-    LARGE_INTEGER PostWait;
-    QueryPerformanceCounter(&PostWait);
-    InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
+    DWORD WaitResult;
+    if (WakeEvent) {
+        LONGLONG RemainingMs = WaitMs;
+        WaitResult = WAIT_TIMEOUT;
+        HANDLE Handles[2] = { HostMutex, WakeEvent };
+        while (RemainingMs > 0) {
+            LARGE_INTEGER PreWait;
+            QueryPerformanceCounter(&PreWait);
+            ResetEvent(WakeEvent);
+            DWORD Chunk = (DWORD)((RemainingMs > 5000) ? 5000 : RemainingMs);
+            WaitResult = WaitForMultipleObjects(2, Handles, FALSE, Chunk);
+            LARGE_INTEGER PostWait;
+            QueryPerformanceCounter(&PostWait);
+            InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
+
+            if (WaitResult == WAIT_OBJECT_0)
+                break;
+            if (WaitResult == WAIT_OBJECT_0 + 1)
+                DeliverPendingApcs();
+            RemainingMs -= Chunk;
+        }
+    } else {
+        LARGE_INTEGER PreWait;
+        QueryPerformanceCounter(&PreWait);
+        WaitResult = WaitForSingleObject(HostMutex, WaitMs);
+        LARGE_INTEGER PostWait;
+        QueryPerformanceCounter(&PostWait);
+        InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
+    }
 
     if (WaitResult == WAIT_TIMEOUT)
         return 0x00000102;
@@ -248,18 +324,52 @@ h_KeWaitForMultipleObjects(ULONG Count, PVOID Object[], uint32_t WaitType, _KWAI
         }
     }
 
+    // Append the thread's wake event (index ValidCount) so a cross-thread kernel
+    // APC signaled by KeInsertQueueApc interrupts the wait promptly.
+    HANDLE WakeEvent = KeCurrentWakeEvent();
+    bool HasWake = (WakeEvent != nullptr);
+
+    // One wait call: objects + wake event (WaitAny), with an explicit all-signaled
+    // check below to preserve WaitAll completion semantics.
+    auto WaitOnce = [&](DWORD ChunkMs) -> DWORD {
+        if (!HasWake)
+            return WaitForMultipleObjects(ValidCount, HandleList, WaitAll, ChunkMs);
+        ResetEvent(WakeEvent);
+        HANDLE* Wh = (HANDLE*)malloc(sizeof(HANDLE) * (ValidCount + 1));
+        memcpy(Wh, HandleList, sizeof(HANDLE) * ValidCount);
+        Wh[ValidCount] = WakeEvent;
+        DWORD R = WaitForMultipleObjects(ValidCount + 1, Wh, FALSE, ChunkMs);
+        free(Wh);
+        return R;
+    };
+
+    auto AllObjectsSignaled = [&]() -> bool {
+        for (ULONG I = 0; I < ValidCount; I++)
+            if (WaitForSingleObject(HandleList[I], 0) != WAIT_OBJECT_0)
+                return false;
+        return true;
+    };
+
+    const DWORD ChunkMs = 5000;
+    DWORD Ret = WAIT_TIMEOUT;
+
     if (IsInfinite) {
-        const DWORD ChunkMs = 5000;
         int RetryCount = 0;
         while (true) {
             LARGE_INTEGER PreWait;
             QueryPerformanceCounter(&PreWait);
-            DWORD Ret = WaitForMultipleObjects(ValidCount, HandleList, WaitAll, ChunkMs);
+            Ret = WaitOnce(ChunkMs);
             LARGE_INTEGER PostWait;
             QueryPerformanceCounter(&PostWait);
             InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
 
+            if (HasWake && Ret == WAIT_OBJECT_0 + ValidCount) {
+                DeliverPendingApcs();   // woken by an APC; resume the wait
+                continue;
+            }
             if (Ret != WAIT_TIMEOUT) {
+                if (WaitAll && !AllObjectsSignaled())
+                    continue;   // WaitAll: not all signaled yet
                 NTSTATUS St = WaitResultToStatus(Ret, OrigIndex, ValidCount, WaitAll);
                 free(HandleList);
                 free(OrigIndex);
@@ -274,12 +384,30 @@ h_KeWaitForMultipleObjects(ULONG Count, PVOID Object[], uint32_t WaitType, _KWAI
         }
     }
 
-    LARGE_INTEGER PreWait;
-    QueryPerformanceCounter(&PreWait);
-    DWORD Ret = WaitForMultipleObjects(ValidCount, HandleList, WaitAll, WaitMs);
-    LARGE_INTEGER PostWait;
-    QueryPerformanceCounter(&PostWait);
-    InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
+    LONGLONG RemainingMs = WaitMs;
+    while (RemainingMs > 0) {
+        LARGE_INTEGER PreWait;
+        QueryPerformanceCounter(&PreWait);
+        DWORD Chunk = (DWORD)((RemainingMs > ChunkMs) ? ChunkMs : RemainingMs);
+        Ret = WaitOnce(Chunk);
+        LARGE_INTEGER PostWait;
+        QueryPerformanceCounter(&PostWait);
+        InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostWait.QuadPart - PreWait.QuadPart));
+
+        if (HasWake && Ret == WAIT_OBJECT_0 + ValidCount) {
+            DeliverPendingApcs();
+            RemainingMs -= Chunk;
+            continue;
+        }
+        if (Ret != WAIT_TIMEOUT) {
+            if (WaitAll && !AllObjectsSignaled()) {
+                RemainingMs -= Chunk;
+                continue;
+            }
+            break;
+        }
+        RemainingMs -= Chunk;
+    }
 
     NTSTATUS FinalSt = WaitResultToStatus(Ret, OrigIndex, ValidCount, WaitAll);
     free(HandleList);

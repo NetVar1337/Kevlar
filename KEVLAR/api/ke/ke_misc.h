@@ -24,5 +24,9 @@ BOOLEAN h_KeAlertThread(void* Thread, uint8_t AlertMode);
 // Deliver queued kernel APCs on the current thread; returns how many ran.
 // Called from wait/alert delivery points (ke_event, ke_misc) and KeInsertQueueApc.
 int DeliverPendingApcs();
+// Wake event for the current thread's wait (per-thread for workers, a lazily
+// created shared event for the primary DriverEntry thread). Returns nullptr if
+// no context exists at all. Waits wait on it so a cross-thread APC wakes them.
+HANDLE KeCurrentWakeEvent();
 uint64_t h_KeQueryActiveProcessorCountEx(uint16_t GroupNumber);
 void h_KeQuerySystemTimePrecise(PLARGE_INTEGER CurrentTime);

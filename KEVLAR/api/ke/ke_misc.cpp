@@ -28,13 +28,34 @@ NTSTATUS h_KeDelayExecutionThread(char WaitMode, BOOLEAN Alertable, PLARGE_INTEG
     DeliverPendingApcs();
 
     auto HostInterval = UcPtr(Interval);
-    DWORD SleepMs = (DWORD)(HostInterval->QuadPart * -1 / 10000);
-    LARGE_INTEGER PreSleep;
-    QueryPerformanceCounter(&PreSleep);
-    Sleep(SleepMs);
-    LARGE_INTEGER PostSleep;
-    QueryPerformanceCounter(&PostSleep);
-    InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostSleep.QuadPart - PreSleep.QuadPart));
+    LONGLONG SleepMs = HostInterval->QuadPart * -1 / 10000;
+    if (SleepMs < 0) SleepMs = 0;
+
+    // Chunked sleep on the wake event so a cross-thread kernel APC interrupts the
+    // delay and is delivered here (kernel APCs deliver on wait completion).
+    HANDLE WakeEvent = KeCurrentWakeEvent();
+    while (SleepMs > 0) {
+        DWORD Chunk = (DWORD)((SleepMs > 5000) ? 5000 : SleepMs);
+        LARGE_INTEGER PreSleep;
+        QueryPerformanceCounter(&PreSleep);
+        DWORD R = WAIT_TIMEOUT;
+        if (WakeEvent) {
+            ResetEvent(WakeEvent);
+            R = WaitForSingleObject(WakeEvent, Chunk);
+        } else {
+            Sleep(Chunk);
+        }
+        LARGE_INTEGER PostSleep;
+        QueryPerformanceCounter(&PostSleep);
+        InterlockedAdd64(&UnicornEmu::HookTimeAccumulated, -(PostSleep.QuadPart - PreSleep.QuadPart));
+        if (R == WAIT_OBJECT_0) {
+            DeliverPendingApcs();
+            continue;   // re-sleep the remaining interval after delivery
+        }
+        SleepMs -= Chunk;
+    }
+
+    DeliverPendingApcs();   // kernel APCs deliver at wait completion
     return STATUS_SUCCESS;
 }
 
@@ -155,6 +176,16 @@ void h_KfLowerIrql(UCHAR NewIrql) { KeSetCurrentIrqlRaw(NewIrql); }
 // thread (CreateEx5) sharing the primary memory map -- same pattern as timer DPCs.
 static std::mutex g_ApcQueueLock;          // ponytail: single global lock; per-thread locks if throughput matters
 static std::vector<_KAPC*> g_PrimaryApcs;  // queue for the primary (DriverEntry) thread
+static HANDLE g_PrimaryWakeEvent = nullptr; // wakes the primary thread's wait on a cross-thread APC
+
+HANDLE KeCurrentWakeEvent() {
+    auto Ctx = UnicornThread::GetCurrent();
+    if (Ctx)
+        return Ctx->WakeEvent;
+    if (!g_PrimaryWakeEvent)
+        g_PrimaryWakeEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);  // manual reset
+    return g_PrimaryWakeEvent;
+}
 
 // Resolve the target thread's APC queue. Requires no lock held on the queue itself.
 static std::vector<_KAPC*>* ApcQueueForTarget(_KTHREAD* Thread) {
@@ -168,28 +199,94 @@ static std::vector<_KAPC*>* ApcQueueForTarget(_KTHREAD* Thread) {
     return nullptr;
 }
 
-// Run a queued kernel APC on a delivery thread. KernelRoutine gets the real
-// _PKERNEL_ROUTINE argument layout: RCX=Apc, RDX=&NormalRoutine, R8=&NormalContext,
-// R9=&SystemArgument1, [RSP+0x28]=&SystemArgument2.
-// ponytail: NormalRoutine runs in the delivery thread, not the target's context;
-// most kernel-APC users drive work off KernelRoutine only.
+// Run guest function Func on the current thread's engine, preserving all caller
+// registers (mirrors KeIpiGenericCall). Arguments go in RCX/RDX/R8/R9 and, when
+// Arg5 is non-null, [RSP+0x28]. Returns false if Func is null or emulation fails.
+static bool RunInlineOnCurrent(uint64_t Func, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5) {
+    auto ThrCtx = UnicornThread::GetCurrent();
+    uc_engine* Uc = ThrCtx ? ThrCtx->Engine : UnicornEmu::PrimaryEngine;
+    if (!Uc || !Func) return false;
+
+    uint64_t Save[14];
+    uc_reg_read(Uc, UC_X86_REG_RCX, &Save[0]);
+    uc_reg_read(Uc, UC_X86_REG_RDX, &Save[1]);
+    uc_reg_read(Uc, UC_X86_REG_R8, &Save[2]);
+    uc_reg_read(Uc, UC_X86_REG_R9, &Save[3]);
+    uc_reg_read(Uc, UC_X86_REG_R10, &Save[4]);
+    uc_reg_read(Uc, UC_X86_REG_R11, &Save[5]);
+    uc_reg_read(Uc, UC_X86_REG_RSP, &Save[6]);
+    uc_reg_read(Uc, UC_X86_REG_RAX, &Save[7]);
+    uc_reg_read(Uc, UC_X86_REG_RBX, &Save[8]);
+    uc_reg_read(Uc, UC_X86_REG_RDI, &Save[9]);
+    uc_reg_read(Uc, UC_X86_REG_RSI, &Save[10]);
+    uc_reg_read(Uc, UC_X86_REG_RBP, &Save[11]);
+    uc_reg_read(Uc, UC_X86_REG_R12, &Save[12]);
+    uc_reg_read(Uc, UC_X86_REG_R13, &Save[13]);
+
+    uint64_t Rsp = Save[6] - 0x28;
+    uint64_t Zero = 0;
+    uc_mem_write(Uc, Rsp + 0x08, &Zero, 8);
+    uc_mem_write(Uc, Rsp + 0x10, &Zero, 8);
+    uc_mem_write(Uc, Rsp + 0x18, &Zero, 8);
+    uc_mem_write(Uc, Rsp + 0x20, &Zero, 8);
+    uc_mem_write(Uc, Rsp + 0x28, &Arg5, 8);
+    uint64_t RetAddr = SENTINEL_RET_ADDR;
+    uc_mem_write(Uc, Rsp, &RetAddr, 8);
+    uc_reg_write(Uc, UC_X86_REG_RCX, &Arg1);
+    uc_reg_write(Uc, UC_X86_REG_RDX, &Arg2);
+    uc_reg_write(Uc, UC_X86_REG_R8, &Arg3);
+    uc_reg_write(Uc, UC_X86_REG_R9, &Arg4);
+    uc_reg_write(Uc, UC_X86_REG_RSP, &Rsp);
+
+    uc_err EmuErr = uc_emu_start(Uc, Func, SENTINEL_RET_ADDR, 0, 0);
+
+    uc_reg_write(Uc, UC_X86_REG_RCX, &Save[0]);
+    uc_reg_write(Uc, UC_X86_REG_RDX, &Save[1]);
+    uc_reg_write(Uc, UC_X86_REG_R8, &Save[2]);
+    uc_reg_write(Uc, UC_X86_REG_R9, &Save[3]);
+    uc_reg_write(Uc, UC_X86_REG_R10, &Save[4]);
+    uc_reg_write(Uc, UC_X86_REG_R11, &Save[5]);
+    uc_reg_write(Uc, UC_X86_REG_RSP, &Save[6]);
+    uc_reg_write(Uc, UC_X86_REG_RAX, &Save[7]);
+    uc_reg_write(Uc, UC_X86_REG_RBX, &Save[8]);
+    uc_reg_write(Uc, UC_X86_REG_RDI, &Save[9]);
+    uc_reg_write(Uc, UC_X86_REG_RSI, &Save[10]);
+    uc_reg_write(Uc, UC_X86_REG_RBP, &Save[11]);
+    uc_reg_write(Uc, UC_X86_REG_R12, &Save[12]);
+    uc_reg_write(Uc, UC_X86_REG_R13, &Save[13]);
+
+    return EmuErr == UC_ERR_OK;
+}
+
+// Deliver a queued kernel APC on the target thread's own context. KernelRoutine
+// gets the real _PKERNEL_ROUTINE layout (RCX=Apc, RDX=&NormalRoutine,
+// R8=&NormalContext, R9=&SystemArgument1, [RSP+0x28]=&SystemArgument2) and runs
+// inline on the current engine, so guest-visible state (current ETHREAD, KPCR,
+// stack) is the target thread's. If the KernelRoutine leaves a NormalRoutine in
+// the APC, it runs next at PASSIVE_LEVEL on the same context (real semantics).
 static void DeliverOneApc(_KAPC* ApcUc, _KAPC* HostApc) {
     uint64_t KernelRoutine = (uint64_t)HostApc->Reserved[0];
-    uint64_t NormalRoutine = (uint64_t)HostApc->Reserved[2];
     if (!KernelRoutine) return;
 
-    if (NormalRoutine)
-        Logger::Log("{GRY}\tAPC: NormalRoutine=0x%llx runs on delivery thread (no target context){RESET}\n", NormalRoutine);
-
     uint64_t ApcAddr = (uint64_t)ApcUc;
-    UnicornThread::CreateEx5(
+    RunInlineOnCurrent(
         KernelRoutine,
         ApcAddr,               // RCX = Apc
         ApcAddr + 0x30,        // RDX = &Apc->NormalRoutine
         ApcAddr + 0x38,        // R8  = &Apc->NormalContext
         ApcAddr + 0x40,        // R9  = &Apc->SystemArgument1
-        ApcAddr + 0x48,        // [RSP+0x28] = &Apc->SystemArgument2
-        nullptr);
+        ApcAddr + 0x48);       // [RSP+0x28] = &Apc->SystemArgument2
+
+    uint64_t NormalRoutine = (uint64_t)HostApc->Reserved[2];
+    if (NormalRoutine) {
+        Logger::Log("{GRY}\tAPC: NormalRoutine=0x%llx on target context{RESET}\n", NormalRoutine);
+        RunInlineOnCurrent(
+            NormalRoutine,
+            (uint64_t)HostApc->NormalContext,   // RCX = NormalContext
+            (uint64_t)HostApc->SystemArgument1, // RDX = SystemArgument1
+            (uint64_t)HostApc->SystemArgument2, // R8  = SystemArgument2
+            0, 0);
+    }
 }
 
 int DeliverPendingApcs() {
@@ -315,8 +412,19 @@ BOOLEAN h_KeInsertQueueApc(
 
     // Deliver immediately when targeting the current thread at PASSIVE outside a
     // critical region (otherwise it waits for the next wait/alert delivery point).
-    if ((uint64_t)HostApc->Thread == (uint64_t)UnicornThread::GetCurrentEthread())
+    if ((uint64_t)HostApc->Thread == (uint64_t)UnicornThread::GetCurrentEthread()) {
         DeliverPendingApcs();
+    } else {
+        // Cross-thread APC: wake the target if it is blocked in a wait so the
+        // kernel APC reaches it promptly (delivered on the target's context in
+        // its wait loop) instead of sitting until an arbitrary delivery point.
+        if ((uint64_t)HostApc->Thread == (uint64_t)&FakeKernelThread) {
+            if (!g_PrimaryWakeEvent) g_PrimaryWakeEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+            SetEvent(g_PrimaryWakeEvent);
+        } else {
+            UnicornThread::SignalWake(HostApc->Thread);
+        }
+    }
 
     return TRUE;
 }

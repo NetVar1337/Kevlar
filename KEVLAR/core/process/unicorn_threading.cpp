@@ -228,6 +228,7 @@ static ThreadContext* CreateExImpl(uint64_t StartRoutine, uint64_t Arg1, uint64_
 
     auto Ctx = new ThreadContext();
     Ctx->ThreadId = UnicornThread::NextThreadId++;
+    Ctx->WakeEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);  // manual reset; signaled by KeInsertQueueApc to interrupt waits
 
     Ctx->EthreadUcAddr = UnicornMem::AllocateVariable(CallerEngine, sizeof(_ETHREAD), "ETHREAD");
     Ctx->EthreadHostPtr = (_ETHREAD*)UnicornMem::UcToHost(Ctx->EthreadUcAddr);
@@ -341,6 +342,7 @@ void UnicornThread::Terminate(ThreadContext* Ctx, NTSTATUS ExitStatus) {
     }
 
     WaitForSingleObject(Ctx->HostThread, 5000);
+    if (Ctx->WakeEvent) CloseHandle(Ctx->WakeEvent);
     CloseHandle(Ctx->HostThread);
     uc_close(Ctx->Engine);
 
@@ -376,6 +378,18 @@ _ETHREAD* UnicornThread::GetCurrentEthread() {
         return Ctx->EthreadHostPtr;
 
     return &FakeKernelThread;
+}
+
+void UnicornThread::SignalWake(_KTHREAD* Target) {
+    if (!Target)
+        return;
+    std::lock_guard<std::mutex> Lock(ThreadLock);
+    for (auto& [Id, Ctx] : ThreadMap) {
+        if (Ctx && (uint64_t)Ctx->EthreadHostPtr == (uint64_t)Target && Ctx->WakeEvent) {
+            SetEvent(Ctx->WakeEvent);
+            return;
+        }
+    }
 }
 
 uc_engine* UnicornThread::GetCurrentEngine() {
