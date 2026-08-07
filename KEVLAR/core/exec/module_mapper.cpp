@@ -214,6 +214,11 @@ uint64_t UnicornEmu::MapDriverImage(PEFile* Driver, uint64_t DesiredBase) {
 }
 
 uint64_t UnicornEmu::MapSystemModule(PEFile* Module, const char* Name) {
+    if (!Module->GetMappedImageBase()) {
+        Logger::Log("{YEL}MapSystemModule '%s': image not loadable on host, using stub{RESET}\n", Name);
+        return 0;
+    }
+
     uint64_t VirtSize = Module->GetVirtualSize();
     uint64_t AlignedSize = (VirtSize + 0xFFF) & ~0xFFFULL;
 

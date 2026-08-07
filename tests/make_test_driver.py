@@ -35,7 +35,28 @@ def align(v, a):
     return (v + a - 1) & ~(a - 1)
 
 
-def build_driver():
+def import_table():
+    """A single import of ntoskrnl.exe!KeInitializeSpinLock.
+
+    RVA base 0x1100: IID @ +0x00, name @ +0x14, IAT @ +0x28, OFT @ +0x38,
+    IMAGE_IMPORT_BY_NAME @ +0x48. All values are RVAs, so no .reloc is needed;
+    the IAT slot is overwritten by KEVLAR's BuildSentinelIat.
+    """
+    base = SECTION_RVA + 0x100
+    out = bytearray()
+    out += struct.pack("<IIIII", base + 0x38, 0, 0, base + 0x14, base + 0x28)  # IID
+    assert len(out) == 20
+    out += b"ntoskrnl.exe\x00"             # +0x14 (13 bytes, ends at +0x21)
+    out += b"\x00" * (0x28 - len(out))     # align IAT thunk to +0x28
+    out += struct.pack("<QQ", 0, 0)        # +0x28 IAT thunk
+    out += struct.pack("<QQ", base + 0x48, 0)  # +0x38 OFT thunk -> ImportByName
+    assert len(out) == 0x48
+    out += struct.pack("<H", 0)            # Hint
+    out += b"KeInitializeSpinLock\x00"     # Name
+    return out
+
+
+def build_driver(with_import=False):
     # --- code at RVA 0x1000: KPCR.Self via GS, conditional branch, STATUS_SUCCESS ---
     #   0x1000: sub rsp, 0x28
     #   0x1004: mov rax, qword ptr gs:[0x20]     ; KPCR.Self
@@ -98,8 +119,9 @@ def build_driver():
     o += struct.pack("<I", 0)                        # LoaderFlags
     o += struct.pack("<I", 16)                       # NumberOfRvaAndSizes
     assert len(o) == 0x70, f"optional header prefix {len(o)} != 112"
-    for _ in range(16):
-        o += struct.pack("<II", 0, 0)
+    import_dir = (SECTION_RVA + 0x100, 0x60) if with_import else (0, 0)
+    for i in range(16):
+        o += struct.pack("<II", *import_dir) if i == 1 else struct.pack("<II", 0, 0)
     assert len(o) == 0xF0, f"optional header {len(o)} != 240"
 
     hdr += o
@@ -126,10 +148,11 @@ def verify_load(path):
 
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "test_driver.sys"
-    image = build_driver()
+    image = build_driver(with_import="--with-import" in sys.argv)
     with open(out, "wb") as f:
         f.write(image)
-    print(f"wrote {out} ({len(image)} bytes)")
+    print(f"wrote {out} ({len(image)} bytes)"
+          + (" [with ntoskrnl import]" if "--with-import" in sys.argv else ""))
     if "--verify" in sys.argv:
         verify_load(out)
 

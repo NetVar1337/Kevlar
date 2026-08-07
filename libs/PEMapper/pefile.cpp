@@ -121,22 +121,40 @@ void PEFile::ParseExport() {
         = makepointer<PIMAGE_EXPORT_DIRECTORY>(mapped_buffer, pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
     if (!pImageExportDescriptor->NumberOfNames || !pImageExportDescriptor->AddressOfFunctions)
         return;
-    PDWORD fAddr = (PDWORD)((LPBYTE)mapped_buffer + pImageExportDescriptor->AddressOfFunctions);
-    PDWORD fNames = (PDWORD)((LPBYTE)mapped_buffer + pImageExportDescriptor->AddressOfNames);
-    PWORD fOrd = (PWORD)((LPBYTE)mapped_buffer + pImageExportDescriptor->AddressOfNameOrdinals);
 
     uint32_t ExportDirRva = pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
     uint32_t ExportDirSize = pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
 
+    // Every table read must be bounds-checked against the mapped image; a single
+    // out-of-range name RVA used to construct a std::string key would corrupt the
+    // export map and fault a later GetExport (the historical ResolveImport crash).
+    auto Bounds = [&](uint64_t Rva, uint64_t Size) -> bool {
+        return Rva < virtual_size && Size <= virtual_size - Rva;
+    };
+
+    if (!Bounds(pImageExportDescriptor->AddressOfFunctions, (uint64_t)pImageExportDescriptor->NumberOfFunctions * sizeof(DWORD))
+        || !Bounds(pImageExportDescriptor->AddressOfNames, (uint64_t)pImageExportDescriptor->NumberOfNames * sizeof(DWORD))
+        || !Bounds(pImageExportDescriptor->AddressOfNameOrdinals, (uint64_t)pImageExportDescriptor->NumberOfNames * sizeof(WORD)))
+        return;
+
+    PDWORD fAddr = (PDWORD)((LPBYTE)mapped_buffer + pImageExportDescriptor->AddressOfFunctions);
+    PDWORD fNames = (PDWORD)((LPBYTE)mapped_buffer + pImageExportDescriptor->AddressOfNames);
+    PWORD fOrd = (PWORD)((LPBYTE)mapped_buffer + pImageExportDescriptor->AddressOfNameOrdinals);
+
     for (DWORD i = 0; i < pImageExportDescriptor->NumberOfNames; i++) {
-        LPSTR pFuncName = (LPSTR)((LPBYTE)mapped_buffer + fNames[i]);
-        if (pFuncName) {
-            uint32_t FuncRva = fAddr[fOrd[i]];
-            if (FuncRva >= ExportDirRva && FuncRva < ExportDirRva + ExportDirSize)
-                continue;
-            exports_namekey.insert(std::pair(pFuncName, FuncRva));
-            exports_rvakey.insert(std::pair(FuncRva, pFuncName));
-        }
+        uint32_t NameRva = fNames[i];
+        if (fOrd[i] >= pImageExportDescriptor->NumberOfFunctions || !Bounds(NameRva, 1))
+            continue;
+        // Name string must be NUL-terminated inside the image before it is copied.
+        size_t NameLen = strnlen_s((const char*)((LPBYTE)mapped_buffer + NameRva), (size_t)(virtual_size - NameRva));
+        if (NameLen == 0 || NameLen == virtual_size - NameRva)
+            continue;
+        uint32_t FuncRva = fAddr[fOrd[i]];
+        if (FuncRva >= ExportDirRva && FuncRva < ExportDirRva + ExportDirSize)
+            continue; // forwarded export, not resolvable here
+        std::string FuncName((const char*)((LPBYTE)mapped_buffer + NameRva), NameLen);
+        exports_namekey.insert(std::pair(FuncName, (uint64_t)FuncRva));
+        exports_rvakey.insert(std::pair((uint64_t)FuncRva, std::move(FuncName)));
     }
 }
 
@@ -160,27 +178,37 @@ PEFile::PEFile(std::string filename, std::string name, uintmax_t size) {
 
 void PEFile::ResolveImport() {
 
+    if (!mapped_buffer)
+        return;
     if (pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0
         || pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size == 0)
         return;
+
+    auto Bounds = [&](uint64_t Rva) -> bool { return Rva < virtual_size; };
 
     PIMAGE_IMPORT_DESCRIPTOR pImageImportDescriptor
         = makepointer<PIMAGE_IMPORT_DESCRIPTOR>(mapped_buffer, pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
 
     for (; pImageImportDescriptor->Name; pImageImportDescriptor++) {
 
+        if (!Bounds(pImageImportDescriptor->Name))
+            break;
         PCHAR pDllName = makepointer<PCHAR>(mapped_buffer, pImageImportDescriptor->Name);
 
         PEFile* importModule = nullptr;
         char tmpName[256] = { 0 };
-        strcpy_s(tmpName, pDllName);
-        for (int nl = 0; nl < strlen(tmpName); nl++)
-            tmpName[nl] = tolower(tmpName[nl]);
+        strncpy_s(tmpName, sizeof(tmpName), pDllName, _TRUNCATE);
+        for (int nl = 0; nl < (int)strlen(tmpName); nl++)
+            tmpName[nl] = (char)tolower(tmpName[nl]);
         if (!moduleList_namekey.contains(tmpName)) {
             Logger::Log("{CYN}Loading %s...{RESET}\n", pDllName);
             importModule = PEFile::Open(KevlarGlobal::GetImportDir() + pDllName, pDllName);
         } else {
             importModule = moduleList_namekey[tmpName];
+        }
+        if (!importModule) {
+            Logger::Log("{YEL}ResolveImport: cannot load %s, skipping its imports{RESET}\n", pDllName);
+            continue;
         }
         auto modulebase = importModule->GetMappedImageBase();
         PIMAGE_THUNK_DATA pOriginalThunk = NULL;
@@ -195,15 +223,22 @@ void PEFile::ResolveImport() {
         VirtualQuery(pIATThunk, &mbi, sizeof(mbi));
         VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_READWRITE, &oldProtect);
         for (; pOriginalThunk->u1.AddressOfData; pOriginalThunk++, pIATThunk++) {
-            FARPROC lpFunction = NULL;
             if (IMAGE_SNAP_BY_ORDINAL(pOriginalThunk->u1.Ordinal)) {
-                DebugBreak();
-            } else {
-
-                PIMAGE_IMPORT_BY_NAME pImageImportByName = makepointer<PIMAGE_IMPORT_BY_NAME>(mapped_buffer, pOriginalThunk->u1.AddressOfData);
-                pIATThunk->u1.Function = modulebase + importModule->GetExport(pImageImportByName->Name);
-                //Logger::Log("Resolved %s::%s to %llx\n", pDllName, pImageImportByName->Name, pIATThunk->u1.Function);
+                // Ordinal imports are resolved by BuildSentinelIat; nothing to do here.
+                continue;
             }
+
+            uint32_t NameRva = (uint32_t)(pOriginalThunk->u1.AddressOfData & 0x7FFFFFFF);
+            if (!Bounds(NameRva))
+                continue;
+            PIMAGE_IMPORT_BY_NAME pImageImportByName = makepointer<PIMAGE_IMPORT_BY_NAME>(mapped_buffer, NameRva);
+            uint64_t ExportRva = importModule->GetExport(pImageImportByName->Name);
+            if (ExportRva && modulebase) {
+                // Note: this host-image IAT is not executed; UnicornEmu::BuildSentinelIat
+                // rebuilds the guest IAT with sentinel stubs. Keep the write valid anyway.
+                pIATThunk->u1.Function = modulebase + ExportRva;
+            }
+            //Logger::Log("Resolved %s::%s to %llx\n", pDllName, pImageImportByName->Name, pIATThunk->u1.Function);
         }
         VirtualProtect(mbi.BaseAddress, mbi.RegionSize, oldProtect, &oldProtect);
     }
@@ -216,36 +251,27 @@ uint64_t PEFile::GetMappedImageBase() { return (uint64_t)mapped_buffer; }
 uint64_t PEFile::GetVirtualSize() { return virtual_size; }
 
 ImportData* PEFile::GetImport(std::string name) {
-
-    if (imports_namekey.contains(name)) {
-        return &imports_namekey[name];
-    }
-    return 0;
+    if (name.empty())
+        return nullptr;
+    auto It = imports_namekey.find(name);
+    return It == imports_namekey.end() ? nullptr : &It->second;
 }
 
 ImportData* PEFile::GetImport(uint64_t rva) {
-
-    if (imports_rvakey.contains(rva)) {
-        return &imports_rvakey[rva];
-    }
-    return 0;
+    auto It = imports_rvakey.find(rva);
+    return It == imports_rvakey.end() ? nullptr : &It->second;
 }
 
 uint64_t PEFile::GetExport(std::string name) {
     if (name.empty())
         return 0;
-    if (exports_namekey.contains(name)) {
-        return exports_namekey[name];
-    }
-    return 0;
+    auto It = exports_namekey.find(name);
+    return It == exports_namekey.end() ? 0 : It->second;
 }
 
 const char* PEFile::GetExport(uint64_t rva) {
-
-    if (exports_rvakey.contains(rva)) {
-        return exports_rvakey[rva].c_str();
-    }
-    return 0;
+    auto It = exports_rvakey.find(rva);
+    return It == exports_rvakey.end() ? nullptr : It->second.c_str();
 }
 
 std::unordered_map<uint64_t, std::string> PEFile::GetAllExports() { return exports_rvakey; }
