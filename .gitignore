@@ -11,6 +11,9 @@ builds/
 x64/
 Debug/
 Release/
+# ...but core/debug is build source, not an output dir (the Debug/ rule would swallow it)
+!KEVLAR/core/debug/
+!KEVLAR/core/debug/**
 [Bb]in/
 [Oo]bj/
 *.obj
