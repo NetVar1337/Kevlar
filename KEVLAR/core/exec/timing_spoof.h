@@ -8,6 +8,10 @@ extern thread_local int64_t TlsLastRdtscQpc;
 extern thread_local bool TlsCpuidBetweenRdtsc;
 extern thread_local int TlsShortIntervalCount;
 
+// Deterministic RNG seed for TSC jitter (--seed N). Fixed default so runs are
+// reproducible; per-thread streams still diverge via thread_local state.
+extern uint64_t TimingSeed;
+
 static constexpr double EmulationSpeedRatio = 500.0;
 static constexpr double ShortIntervalThreshold = 0.002;
 static constexpr int BusyWaitThreshold = 50;

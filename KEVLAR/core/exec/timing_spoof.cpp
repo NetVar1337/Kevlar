@@ -1,6 +1,7 @@
 #include "core/exec/unicorn_engine.h"
 #include "core/exec/unicorn_engine_internal.h"
 #include "core/exec/timing_spoof.h"
+#include "core/exec/cpu_profile.h"
 #include <Logger/Logger.h>
 #include "core/memory/unicorn_memory.h"
 #include <intrin.h>
@@ -11,8 +12,10 @@ thread_local int64_t TlsLastRdtscQpc = 0;
 thread_local bool TlsCpuidBetweenRdtsc = false;
 thread_local int TlsShortIntervalCount = 0;
 
+uint64_t TimingSeed = 0x4B45464F2021ULL; // "KEFO !"
+
 uint64_t TscFastRand() {
-    static thread_local uint64_t State = __rdtsc() ^ (uint64_t)GetCurrentThreadId();
+    static thread_local uint64_t State = TimingSeed;
     State ^= State << 13;
     State ^= State >> 7;
     State ^= State << 17;
@@ -85,14 +88,14 @@ void UnicornEmu::InitTimingSpoofing() {
     QpcFrequency = Freq.QuadPart;
     EmulationStartQpc = StartQpc.QuadPart;
 
-    auto RealKusd = (volatile uint8_t*)0x7FFE0000;
-    EmulationStartSystemTime = *(volatile int64_t*)(RealKusd + 0x14);
+    EmulationStartSystemTime = CpuProfile::kEmulatedSystemTimeBase;
 
-    uint64_t TscFreqEstimate = 3000000000ULL;
-    TscPerQpcTick = (double)TscFreqEstimate / (double)QpcFrequency;
+    // Aligned with CpuProfile leaf 0x15 (38.4MHz * 168 / 2 = 3.2256 GHz) so a
+    // driver that derives frequency from CPUID sees the same rate RDTSC uses.
+    TscPerQpcTick = (double)CpuProfile::kProfileTscHz / (double)QpcFrequency;
 
     HookTimeAccumulated = 0;
-    VirtualTsc = __rdtsc();
+    VirtualTsc = CpuProfile::kInitialVirtualTsc;
 
     Logger::Log("{GRN}Timing spoofing initialized: QpcFreq=%lld TscPerQpc=%.2f{RESET}\n",
         QpcFrequency, TscPerQpcTick);

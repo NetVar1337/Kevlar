@@ -244,6 +244,7 @@
     <ClInclude Include="core\exec\instruction_emulator.h" />
     <ClInclude Include="core\exec\insn_emulator_internal.h" />
     <ClInclude Include="core\exec\timing_spoof.h" />
+    <ClInclude Include="core\exec\cpu_profile.h" />
     <ClInclude Include="core\exception\seh_dispatch.h" />
     <ClInclude Include="core\diagnostics\diag_center.h" />
     <ClInclude Include="core\io\io_manager.h" />

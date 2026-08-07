@@ -1,9 +1,15 @@
 #include "core/exec/unicorn_engine.h"
 #include "core/exec/unicorn_engine_internal.h"
 #include "core/exec/timing_spoof.h"
+#include "core/exec/cpu_profile.h"
 #include <Logger/Logger.h>
 #include "core/memory/unicorn_memory.h"
 #include "core/diagnostics/diag_center.h"
+#include <cstdio>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <vector>
 #include <intrin.h>
 
 void UnicornEmu::Hooks::OnCpuid(uc_engine* Uc, void* UserData) {
@@ -12,8 +18,8 @@ void UnicornEmu::Hooks::OnCpuid(uc_engine* Uc, void* UserData) {
     uc_reg_read(Uc, UC_X86_REG_RCX, &Rcx);
     uc_reg_read(Uc, UC_X86_REG_RIP, &Rip);
 
-    int CpuInfo[4] = { 0 };
-    __cpuidex(CpuInfo, (int)Rax, (int)Rcx);
+    uint32_t CpuInfo[4] = { 0, 0, 0, 0 };
+    CpuProfile::Query((uint32_t)Rax, (uint32_t)Rcx, CpuInfo);
     uint64_t DriverRva = Rip - DRIVER_BASE_UC;
 
     if (DiagnosticHooksEnabled) {
@@ -62,124 +68,6 @@ void UnicornEmu::Hooks::OnCpuid(uc_engine* Uc, void* UserData) {
             (uint32_t)Rax, LeafName, (uint32_t)Rcx, Rip, DriverRva);
         Logger::Log("{RED}  [PRE-SPOOF]  EAX=0x%08x EBX=0x%08x ECX=0x%08x EDX=0x%08x{RESET}\n",
             CpuInfo[0], CpuInfo[1], CpuInfo[2], CpuInfo[3]);
-    }
-
-    if (Rax == 0) {
-        if (IntelCpuSpoofEnabled) {
-            CpuInfo[0] = 0x20;
-            CpuInfo[1] = 0x756E6547;
-            CpuInfo[2] = 0x6C65746E;
-            CpuInfo[3] = 0x49656E69;
-        }
-        if (DiagnosticHooksEnabled) {
-            char VendorStr[13] = {};
-            memcpy(VendorStr + 0, &CpuInfo[1], 4);
-            memcpy(VendorStr + 4, &CpuInfo[3], 4);
-            memcpy(VendorStr + 8, &CpuInfo[2], 4);
-            VendorStr[12] = 0;
-            Logger::Log("{RED}  [CPUID 0] VendorID: %s  MaxLeaf: %d{RESET}\n", VendorStr, CpuInfo[0]);
-        }
-    }
-
-    if (Rax == 1) {
-        CpuInfo[2] &= ~(1 << 31);
-        CpuInfo[2] |= (1 << 31);
-        if (IntelCpuSpoofEnabled) {
-            CpuInfo[0] = 0x000B0671;
-            CpuInfo[1] = (CpuInfo[1] & 0x0000FFFF) | 0x10100000;
-            CpuInfo[2] |= (1 << 0) | (1 << 9) | (1 << 19) | (1 << 20) | (1 << 23) | (1 << 25) | (1 << 28);
-            CpuInfo[3] |= (1 << 0) | (1 << 25) | (1 << 26);
-        }
-    }
-
-    if (Rax == 7 && Rcx == 0) {
-        CpuInfo[1] &= ~(1 << 29);
-        if (IntelCpuSpoofEnabled) {
-            CpuInfo[1] |= (1 << 25);
-        }
-    }
-
-    if ((uint32_t)Rax >= 0x40000000 && (uint32_t)Rax <= 0x4FFFFFFF) {
-        if (Rax == 0x40000000) {
-            CpuInfo[0] = 0x40000006;
-            CpuInfo[1] = 0x756E6547;
-            CpuInfo[2] = 0x6C65746E;
-            CpuInfo[3] = 0x49656E69;
-        }
-        else if (Rax == 0x40000001) {
-            CpuInfo[0] = 0x31237648;
-            CpuInfo[1] = 0;
-            CpuInfo[2] = 0;
-            CpuInfo[3] = 0;
-        }
-        else if (Rax == 0x40000002) {
-            CpuInfo[0] = 0;
-            CpuInfo[1] = 0;
-            CpuInfo[2] = 0;
-            CpuInfo[3] = 0;
-        }
-        else if (Rax == 0x40000003) {
-            CpuInfo[0] = 0;
-            CpuInfo[1] = 0;
-            CpuInfo[2] = 0;
-            CpuInfo[3] = 0;
-        }
-        else if (Rax == 0x40000004) {
-            CpuInfo[0] = 0;
-            CpuInfo[1] = 0;
-            CpuInfo[2] = 0;
-            CpuInfo[3] = 0;
-        }
-        else if (Rax == 0x40000005) {
-            CpuInfo[0] = 0;
-            CpuInfo[1] = 0;
-            CpuInfo[2] = 0;
-            CpuInfo[3] = 0;
-        }
-        else if (Rax == 0x40000006) {
-            CpuInfo[0] = 0;
-            CpuInfo[1] = 0;
-            CpuInfo[2] = 0;
-            CpuInfo[3] = 0;
-        }
-        else {
-            CpuInfo[0] = 0;
-            CpuInfo[1] = 0;
-            CpuInfo[2] = 0;
-            CpuInfo[3] = 0;
-        }
-    }
-
-    if (IntelCpuSpoofEnabled) {
-        static const char IntelBrand[] = "13th Gen Intel(R) Core(TM) i9-13900K";
-        if (Rax == 0x80000002) { memset(CpuInfo, 0, 16); memcpy(CpuInfo, IntelBrand, 16); }
-        if (Rax == 0x80000003) { memset(CpuInfo, 0, 16); memcpy(CpuInfo, IntelBrand + 16, 16); }
-        if (Rax == 0x80000004) { memset(CpuInfo, 0, 16); size_t Rem = strlen(IntelBrand) - 32; if (Rem > 16) Rem = 16; memcpy(CpuInfo, IntelBrand + 32, Rem); }
-        if (Rax == 0x80000000) { CpuInfo[0] = 0x80000008; }
-        if (Rax == 0x15) {
-            CpuInfo[0] = 2;
-            CpuInfo[1] = 168;
-            CpuInfo[2] = 38400000;
-            CpuInfo[3] = 0;
-        }
-        if (Rax == 0x16) {
-            CpuInfo[0] = 3000;
-            CpuInfo[1] = 5800;
-            CpuInfo[2] = 100;
-            CpuInfo[3] = 0;
-        }
-        if (Rax == 0x14 && Rcx == 0) {
-            CpuInfo[0] = 1;
-            CpuInfo[1] = 0x0000000F;
-            CpuInfo[2] = 0x00000006;
-            CpuInfo[3] = 0;
-        }
-        if (Rax == 0x14 && Rcx == 1) {
-            CpuInfo[0] = 0x02490002;
-            CpuInfo[1] = 0;
-            CpuInfo[2] = 0;
-            CpuInfo[3] = 0;
-        }
     }
 
     if (DiagnosticHooksEnabled) {
@@ -233,12 +121,11 @@ void UnicornEmu::Hooks::OnCpuid(uc_engine* Uc, void* UserData) {
         }
         Ev.Leaf = (uint32_t)Rax;
         Ev.SubLeaf = (uint32_t)Rcx;
-        int OrigCpuInfo[4] = {};
-        __cpuidex(OrigCpuInfo, (int)Rax, (int)Rcx);
-        Ev.PreEax = (uint32_t)OrigCpuInfo[0];
-        Ev.PreEbx = (uint32_t)OrigCpuInfo[1];
-        Ev.PreEcx = (uint32_t)OrigCpuInfo[2];
-        Ev.PreEdx = (uint32_t)OrigCpuInfo[3];
+        // No host passthrough: pre == post, nothing is mutated per run.
+        Ev.PreEax = CpuInfo[0];
+        Ev.PreEbx = CpuInfo[1];
+        Ev.PreEcx = CpuInfo[2];
+        Ev.PreEdx = CpuInfo[3];
         Ev.PostEax = (uint32_t)CpuInfo[0];
         Ev.PostEbx = (uint32_t)CpuInfo[1];
         Ev.PostEcx = (uint32_t)CpuInfo[2];
@@ -566,6 +453,329 @@ void UnicornEmu::InstallDivWatch(uc_engine* Uc, uint64_t DriverBase, uint64_t Dr
         DriverBase, DriverBase + DriverSize - 1);
     Logger::Log("{CYN}DIV watch installed: 0x%llx - 0x%llx{RESET}\n",
         DriverBase, DriverBase + DriverSize - 1);
+}
+
+// ===================== provenance + deterministic trace =====================
+// ponytail: branch provenance records the decision point (mnemonic, EFLAGS,
+// register snapshot) and the API result feeding it — not a full taint engine.
+// Deterministic trace records per-executed-driver-insn rva + API events so a
+// run can be replayed (--check) and the first divergence reported. Threads
+// make ordering host-dependent; both are best-effort for single-thread runs.
+// Upgrade path: shadow-register taint or per-thread traces when needed.
+namespace {
+    constexpr size_t PROV_RING_SIZE = 4096;
+    struct ProvEvent {
+        uint64_t Sequence;
+        uint64_t Rip;
+        uint32_t Rva;
+        uint8_t IsApi;
+        uint8_t Taken;
+        char Mnemonic[16];
+        uint32_t Eflags;
+        char ApiName[48];
+        uint64_t RetVal;
+        uint64_t CallerRip;
+        uint64_t Regs[6]; // RAX RCX RDX RBX RSI RDI
+    };
+    ProvEvent ProvRing[PROV_RING_SIZE];
+    uint32_t ProvIdx = 0;
+    uint64_t ProvSeq = 0;
+
+    std::mutex TraceLock;
+    std::vector<uint32_t> TraceBuffer;   // record mode: exec rva + api events
+    std::vector<uint32_t> CheckBuffer;   // check mode: loaded recorded trace
+    size_t CheckPos = 0;
+    uint64_t TraceExecCount = 0;
+    bool TraceCheckDiverged = false;
+    bool TraceFileLoaded = false;
+    std::vector<std::string> TraceFuncNames;
+    struct { uint32_t FuncId; uint64_t RetVal; uint32_t CallerRva; } LastCheckApi = {};
+
+    uint32_t TraceFuncId(const char* Name) {
+        for (size_t I = 0; I < TraceFuncNames.size(); I++)
+            if (TraceFuncNames[I] == Name) return (uint32_t)I;
+        TraceFuncNames.push_back(Name ? Name : "?");
+        return (uint32_t)TraceFuncNames.size() - 1;
+    }
+
+    void ProvRecord(const ProvEvent& E) {
+        ProvRing[ProvIdx % PROV_RING_SIZE] = E;
+        ProvIdx++;
+    }
+
+    void ProvDump() {
+        Logger::Log("{MAG}===== PROVENANCE TRACE (%u events) ====={RESET}\n", ProvIdx);
+        uint32_t Start = (ProvIdx > PROV_RING_SIZE) ? (uint32_t)(ProvIdx - PROV_RING_SIZE) : 0;
+        for (uint32_t I = Start; I < ProvIdx; I++) {
+            auto& E = ProvRing[I % PROV_RING_SIZE];
+            if (E.IsApi) {
+                Logger::Log("#%llu {CYN}[API]{RESET} {WHT}%s{RESET} -> 0x%llx {GRY}caller=drv+0x%llx{RESET}\n",
+                    (unsigned long long)E.Sequence, E.ApiName, (unsigned long long)E.RetVal,
+                    (unsigned long long)(E.CallerRip - DRIVER_BASE_UC));
+            } else {
+                Logger::Log("#%llu {CYN}[BR]{RESET} {WHT}%s{RESET} %s {GRY}drv+0x%llx EFLAGS=0x%x{RESET}\n",
+                    (unsigned long long)E.Sequence, E.Mnemonic, E.Taken ? "taken" : "not-taken",
+                    (unsigned long long)E.Rva, E.Eflags);
+                Logger::Log("      {GRY}RAX=0x%llx RCX=0x%llx RDX=0x%llx RBX=0x%llx RSI=0x%llx RDI=0x%llx{RESET}\n",
+                    (unsigned long long)E.Regs[0], (unsigned long long)E.Regs[1], (unsigned long long)E.Regs[2],
+                    (unsigned long long)E.Regs[3], (unsigned long long)E.Regs[4], (unsigned long long)E.Regs[5]);
+            }
+        }
+        int ErrCount = 0;
+        Logger::Log("{MAG}--- last error-returning API calls (rejection candidates) ---{RESET}\n");
+        for (int K = (int)ProvIdx - 1; K >= 0 && ErrCount < 12; K--) {
+            auto& E = ProvRing[((uint32_t)K) % PROV_RING_SIZE];
+            if (E.IsApi && E.RetVal >= 0xC0000000ULL && E.RetVal <= 0xFFFFFFFFULL) {
+                Logger::Log("  {RED}%s{RESET} -> 0x%08x {GRY}caller=drv+0x%llx{RESET}\n",
+                    E.ApiName, (uint32_t)E.RetVal, (unsigned long long)(E.CallerRip - DRIVER_BASE_UC));
+                ErrCount++;
+            }
+        }
+        Logger::Log("{MAG}==============================================={RESET}\n");
+    }
+
+    bool EvalCond(uint8_t Cond, uint32_t F) {
+        bool OF = (F >> 11) & 1, SF = (F >> 7) & 1, ZF = (F >> 6) & 1;
+        bool CF = (F >> 0) & 1, PF = (F >> 2) & 1;
+        switch (Cond) {
+        case 0: return OF;
+        case 1: return !OF;
+        case 2: return CF;
+        case 3: return !CF;
+        case 4: return ZF;
+        case 5: return !ZF;
+        case 6: return CF || ZF;
+        case 7: return !CF && !ZF;
+        case 8: return SF;
+        case 9: return !SF;
+        case 10: return PF;
+        case 11: return !PF;
+        case 12: return SF != OF;
+        case 13: return SF == OF;
+        case 14: return ZF || (SF != OF);
+        case 15: return !ZF && (SF == OF);
+        }
+        return false;
+    }
+
+    // Jcc condition = low nibble of opcode (0x70-0x7F rel8, 0F 80-8F rel32).
+    int ExtractJccCond(const uint8_t* Code) {
+        if (Code[0] >= 0x70 && Code[0] <= 0x7F) return Code[0] & 0xF;
+        if (Code[0] == 0x0F && Code[1] >= 0x80 && Code[1] <= 0x8F) return Code[1] & 0xF;
+        return -1;
+    }
+}
+
+void UnicornEmu::TraceRecordApi(const char* FuncName, uint64_t RetVal, uint64_t CallerRip) {
+    if (ProvenanceEnabled) {
+        ProvEvent E = {};
+        E.Sequence = ++ProvSeq;
+        E.IsApi = 1;
+        E.Rip = CallerRip;
+        E.Rva = (CallerRip >= DRIVER_BASE_UC) ? (uint32_t)(CallerRip - DRIVER_BASE_UC) : 0;
+        E.RetVal = RetVal;
+        E.CallerRip = CallerRip;
+        snprintf(E.Mnemonic, sizeof(E.Mnemonic), "API");
+        snprintf(E.ApiName, sizeof(E.ApiName), "%s", FuncName ? FuncName : "?");
+        ProvRecord(E);
+    }
+    if (TraceRecordPath.empty()) return;
+    if (CallerRip < DRIVER_BASE_UC || CallerRip >= DRIVER_BASE_UC + 0x80000000ULL) return;
+    std::lock_guard<std::mutex> LG(TraceLock);
+    if (TraceBuffer.size() >= 64 * 1024 * 1024) return;
+    TraceBuffer.push_back(0xFFFFFFFEu);
+    TraceBuffer.push_back(TraceFuncId(FuncName));
+    TraceBuffer.push_back((uint32_t)(RetVal & 0xFFFFFFFF));
+    TraceBuffer.push_back((uint32_t)(RetVal >> 32));
+    TraceBuffer.push_back((uint32_t)(CallerRip - DRIVER_BASE_UC));
+}
+
+static void OnExecTrace(uc_engine* Uc, uint64_t Addr, uint32_t Size, void* UserData) {
+    if (UnicornEmu::ProvenanceEnabled) {
+        uint8_t Code[16] = {};
+        uc_mem_read(Uc, Addr, Code, (Size < 16) ? Size : 16);
+        ZydisDecodedInstruction Instr;
+        ZydisDecodedOperand Operands[ZYDIS_MAX_OPERAND_COUNT];
+        if (ZYAN_SUCCESS(ZydisDecoderDecodeFull(&UnicornEmu::Decoder, Code, 16, &Instr, Operands))) {
+            bool IsCondBranch = false;
+            uint8_t Cond = 0xFF;
+            int JccCond = ExtractJccCond(Code);
+            if (JccCond >= 0) {
+                IsCondBranch = true;
+                Cond = (uint8_t)JccCond;
+            } else {
+                switch (Instr.mnemonic) {
+                case ZYDIS_MNEMONIC_JRCXZ:
+                case ZYDIS_MNEMONIC_JECXZ:
+                case ZYDIS_MNEMONIC_JCXZ:
+                case ZYDIS_MNEMONIC_LOOP:
+                case ZYDIS_MNEMONIC_LOOPE:
+                case ZYDIS_MNEMONIC_LOOPNE:
+                    IsCondBranch = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (IsCondBranch) {
+                uint64_t Fl = 0;
+                uc_reg_read(Uc, UC_X86_REG_EFLAGS, &Fl);
+                uint64_t Rcx = 0;
+                uc_reg_read(Uc, UC_X86_REG_RCX, &Rcx);
+                bool Taken = false;
+                if (Cond == 0xFF) {
+                    switch (Instr.mnemonic) {
+                    case ZYDIS_MNEMONIC_JRCXZ: case ZYDIS_MNEMONIC_JECXZ: case ZYDIS_MNEMONIC_JCXZ:
+                        Taken = (Rcx == 0); break;
+                    case ZYDIS_MNEMONIC_LOOP: Taken = (Rcx != 0); break;
+                    case ZYDIS_MNEMONIC_LOOPE: Taken = (Rcx != 0) && ((Fl >> 6) & 1); break;
+                    case ZYDIS_MNEMONIC_LOOPNE: Taken = (Rcx != 0) && !((Fl >> 6) & 1); break;
+                    default: Taken = false; break;
+                    }
+                } else {
+                    Taken = EvalCond(Cond, (uint32_t)Fl);
+                }
+                ProvEvent E = {};
+                E.Sequence = ++ProvSeq;
+                E.Rip = Addr;
+                E.Rva = (Addr >= DRIVER_BASE_UC) ? (uint32_t)(Addr - DRIVER_BASE_UC) : (uint32_t)Addr;
+                E.Taken = Taken ? 1 : 0;
+                E.Eflags = (uint32_t)Fl;
+                const char* Mn = ZydisMnemonicGetString(Instr.mnemonic);
+                snprintf(E.Mnemonic, sizeof(E.Mnemonic), "%s", Mn ? Mn : "?");
+                uc_reg_read(Uc, UC_X86_REG_RAX, &E.Regs[0]);
+                uc_reg_read(Uc, UC_X86_REG_RCX, &E.Regs[1]);
+                uc_reg_read(Uc, UC_X86_REG_RDX, &E.Regs[2]);
+                uc_reg_read(Uc, UC_X86_REG_RBX, &E.Regs[3]);
+                uc_reg_read(Uc, UC_X86_REG_RSI, &E.Regs[4]);
+                uc_reg_read(Uc, UC_X86_REG_RDI, &E.Regs[5]);
+                ProvRecord(E);
+            }
+        }
+    }
+
+    if (UnicornEmu::TraceRecordPath.empty() && !TraceFileLoaded) return;
+
+    uint64_t Rva = (Addr >= DRIVER_BASE_UC) ? (Addr - DRIVER_BASE_UC) : Addr;
+    uint32_t Actual = (Addr >= DRIVER_BASE_UC)
+        ? (uint32_t)(Rva & 0x7FFFFFFF)
+        : (0x80000000u | (uint32_t)(Addr & 0x7FFFFFFF));
+
+    std::lock_guard<std::mutex> LG(TraceLock);
+    TraceExecCount++;
+
+    if (!UnicornEmu::TraceRecordPath.empty() && TraceBuffer.size() < 64 * 1024 * 1024)
+        TraceBuffer.push_back(Actual);
+
+    if (TraceFileLoaded) {
+        if (CheckPos < CheckBuffer.size()) {
+            uint32_t Expected = CheckBuffer[CheckPos++];
+            if (Expected == 0xFFFFFFFEu) {
+                if (CheckPos + 4 <= CheckBuffer.size()) {
+                    LastCheckApi.FuncId = CheckBuffer[CheckPos];
+                    LastCheckApi.RetVal = (uint64_t)CheckBuffer[CheckPos + 1] | ((uint64_t)CheckBuffer[CheckPos + 2] << 32);
+                    LastCheckApi.CallerRva = CheckBuffer[CheckPos + 3];
+                }
+                CheckPos += 4;
+                Expected = (CheckPos < CheckBuffer.size()) ? CheckBuffer[CheckPos++] : 0xFFFFFFFFu;
+            }
+            if (Expected != Actual) {
+                TraceCheckDiverged = true;
+                Logger::Log("{RED}[TRACE DIVERGENCE] insn #%llu expected=0x%08x actual=0x%08x (drv+0x%llx){RESET}\n",
+                    (unsigned long long)TraceExecCount, Expected, Actual, (unsigned long long)Rva);
+                Logger::Log("{YEL}  recorded pos=%zu/%zu, last API: #%u ret=0x%llx caller=drv+0x%x{RESET}\n",
+                    CheckPos, CheckBuffer.size(), LastCheckApi.FuncId,
+                    (unsigned long long)LastCheckApi.RetVal, LastCheckApi.CallerRva);
+                uc_emu_stop(Uc);
+            }
+        } else {
+            TraceCheckDiverged = true;
+            Logger::Log("{RED}[TRACE DIVERGENCE] executed past end of recorded trace at insn #%llu (drv+0x%llx){RESET}\n",
+                (unsigned long long)TraceExecCount, (unsigned long long)Rva);
+            uc_emu_stop(Uc);
+        }
+    }
+}
+
+void UnicornEmu::InstallTraceCapture(uc_engine* Uc, uint64_t DriverBase, uint64_t DriverSize) {
+    if (!TraceCheckPath.empty()) {
+        FILE* F = nullptr;
+        fopen_s(&F, TraceCheckPath.c_str(), "rb");
+        if (!F) {
+            Logger::Log("{RED}Trace check: cannot open %s{RESET}\n", TraceCheckPath.c_str());
+            return;
+        }
+        fseek(F, 0, SEEK_END);
+        long Sz = ftell(F);
+        fseek(F, 0, SEEK_SET);
+        if (Sz < 0 || Sz > (long)(256 * 1024 * 1024)) {
+            Logger::Log("{RED}Trace check: file too large or unreadable (%ld bytes){RESET}\n", Sz);
+            fclose(F);
+            return;
+        }
+        CheckBuffer.assign((size_t)Sz / sizeof(uint32_t), 0);
+        if (!CheckBuffer.empty())
+            fread(CheckBuffer.data(), sizeof(uint32_t), CheckBuffer.size(), F);
+        fclose(F);
+        CheckPos = 0;
+        LastCheckApi = {};
+        TraceFileLoaded = true;
+        TraceCheckDiverged = false;
+        Logger::Log("{CYN}Trace check: loaded %zu records from %s{RESET}\n", CheckBuffer.size(), TraceCheckPath.c_str());
+    }
+    if (!TraceRecordPath.empty()) {
+        TraceBuffer.clear();
+        TraceFuncNames.clear();
+        TraceExecCount = 0;
+    }
+    uc_hook Hh;
+    uc_hook_add(Uc, &Hh, UC_HOOK_CODE, (void*)OnExecTrace, nullptr, DriverBase, DriverBase + DriverSize - 1);
+    Logger::Log("{CYN}Trace capture installed: record=%s check=%s{RESET}\n",
+        TraceRecordPath.empty() ? "-" : TraceRecordPath.c_str(),
+        TraceCheckPath.empty() ? "-" : TraceCheckPath.c_str());
+}
+
+void UnicornEmu::TraceFlush() {
+    if (!TraceRecordPath.empty()) {
+        std::lock_guard<std::mutex> LG(TraceLock);
+        FILE* F = nullptr;
+        fopen_s(&F, TraceRecordPath.c_str(), "wb");
+        if (F) {
+            if (!TraceBuffer.empty())
+                fwrite(TraceBuffer.data(), sizeof(uint32_t), TraceBuffer.size(), F);
+            uint32_t End = 0xFFFFFFFFu;
+            fwrite(&End, sizeof(uint32_t), 1, F);
+            fclose(F);
+            Logger::Log("{GRN}Trace recorded: %zu records, %zu api funcs -> %s{RESET}\n",
+                TraceBuffer.size(), TraceFuncNames.size(), TraceRecordPath.c_str());
+        } else {
+            Logger::Log("{RED}Trace record: cannot write %s{RESET}\n", TraceRecordPath.c_str());
+        }
+    }
+    if (TraceFileLoaded) {
+        // Skip trailing API events and the 0xFFFFFFFF end marker: the driver's
+        // last instruction may be the RET after the final call, so any events
+        // recorded after the last consumed exec record are terminator noise.
+        size_t Remaining = CheckBuffer.size() - CheckPos;
+        while (Remaining > 0) {
+            uint32_t Rec = CheckBuffer[CheckPos];
+            if (Rec == 0xFFFFFFFEu && Remaining >= 5) CheckPos += 5;
+            else if (Rec == 0xFFFFFFFFu) CheckPos += 1;
+            else break;
+            Remaining = CheckBuffer.size() - CheckPos;
+        }
+        if (!TraceCheckDiverged) {
+            if (Remaining > 0) {
+                Logger::Log("{RED}[TRACE DIVERGENCE] recorded trace has %zu unconsumed records at end (recorded longer than run){RESET}\n",
+                    Remaining);
+            } else {
+                Logger::Log("{GRN}[TRACE MATCH] %llu executed instructions matched the recorded trace{RESET}\n",
+                    (unsigned long long)TraceExecCount);
+            }
+        }
+    }
+    if (ProvenanceEnabled)
+        ProvDump();
 }
 
 static int ZydisRegToUc(ZydisRegister Reg) {

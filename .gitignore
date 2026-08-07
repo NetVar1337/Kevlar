@@ -44,3 +44,6 @@ FACEIT_IOMMU/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local agent state
+.omc/

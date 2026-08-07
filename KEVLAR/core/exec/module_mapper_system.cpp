@@ -419,6 +419,7 @@ void UnicornEmu::PatchSystemModuleExports() {
 void UnicornEmu::BuildSysModFuncCache() {
     std::lock_guard<std::mutex> Guard(SysModFuncCacheLock);
     SysModFuncCache.clear();
+    int UnknownExportCount = 0;
     for (auto& Mod : MappedSysMods) {
         auto AllExports = Mod.Pe->GetAllExports();
         for (auto& [Rva, Name] : AllExports) {
@@ -458,9 +459,11 @@ void UnicornEmu::BuildSysModFuncCache() {
                     }
                 }
             }
+            if (!Entry.HostFunc)
+                UnknownExportCount++;
             SysModFuncCache[Mod.UcBase + Rva] = Entry;
         }
     }
-    Logger::Log("{GRN}BuildSysModFuncCache: %llu functions cached across %zu modules{RESET}\n",
-        (uint64_t)SysModFuncCache.size(), MappedSysMods.size());
+    Logger::Log("{GRN}BuildSysModFuncCache: %llu functions cached across %zu modules, %d unknown (RET 0 / STATUS_NOT_IMPLEMENTED in strict mode){RESET}\n",
+        (uint64_t)SysModFuncCache.size(), MappedSysMods.size(), UnknownExportCount);
 }

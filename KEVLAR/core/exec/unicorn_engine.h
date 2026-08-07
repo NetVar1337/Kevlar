@@ -173,9 +173,16 @@ extern bool DevirtualizationTest;
 extern bool RdmsrInsnHookSupported;
 extern bool WrmsrInsnHookSupported;
 extern bool MsrCodeInterceptEnabled;
+extern bool StrictExportsEnabled;
+extern bool ProvenanceEnabled;
+extern std::string TraceRecordPath;
+extern std::string TraceCheckPath;
 
 void UpdateKusdTimeValues();
 
+void InstallTraceCapture(uc_engine* Uc, uint64_t DriverBase, uint64_t DriverSize);
+void TraceRecordApi(const char* FuncName, uint64_t RetVal, uint64_t CallerRip);
+void TraceFlush();
 void InstallDriverTrace(uc_engine* Uc, uint64_t DriverBase, uint64_t DriverSize);
 void InstallDivWatch(uc_engine* Uc, uint64_t DriverBase, uint64_t DriverSize);
 void InstallSseAlignCheck(uc_engine* Uc, uint64_t DriverBase, uint64_t DriverSize);

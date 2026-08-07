@@ -204,6 +204,9 @@ void UnicornEmu::Hooks::OnSysModExec(uc_engine* Uc, uint64_t Addr, uint32_t Size
                 Entry->ModName.c_str(), Entry->FuncName.c_str(), CallResult.ExceptionCode, Rcx, Rdx, R8, R9);
             RetVal = 0;
         }
+        uint64_t SysModCallerRip = 0;
+        UcReadU64(Uc, Rsp, SysModCallerRip);
+        UnicornEmu::TraceRecordApi(Entry->FuncName.c_str(), RetVal, SysModCallerRip);
         uc_reg_write(Uc, UC_X86_REG_RAX, &RetVal);
         uint64_t CallerRip = 0;
         UcReadU64(Uc, Rsp, CallerRip);
@@ -257,10 +260,17 @@ void UnicornEmu::Hooks::OnSysModExec(uc_engine* Uc, uint64_t Addr, uint32_t Size
         UcReadU64(Uc, Rsp, RetAddr);
         bool CalledFromOutside = (RetAddr < Entry->UcBase || RetAddr >= Entry->UcBase + Entry->Size);
         if (CalledFromOutside) {
-            Logger::Log("{RED}SysMod UNHANDLED: {WHT}%s!%s {GRY}(0x%llx) {RED}-> forcing RET 0{RESET}\n",
-                Entry->ModName.c_str(), Entry->FuncName.c_str(), Addr);
-            uint64_t Zero = 0;
-            uc_reg_write(Uc, UC_X86_REG_RAX, &Zero);
+            if (StrictExportsEnabled) {
+                Logger::Log("{RED}SysMod UNHANDLED: {WHT}%s!%s {GRY}(0x%llx) {RED}-> STATUS_NOT_IMPLEMENTED (strict){RESET}\n",
+                    Entry->ModName.c_str(), Entry->FuncName.c_str(), Addr);
+                uint64_t Status = 0xC0000002ULL; // STATUS_NOT_IMPLEMENTED
+                uc_reg_write(Uc, UC_X86_REG_RAX, &Status);
+            } else {
+                Logger::Log("{RED}SysMod UNHANDLED: {WHT}%s!%s {GRY}(0x%llx) {RED}-> forcing RET 0{RESET}\n",
+                    Entry->ModName.c_str(), Entry->FuncName.c_str(), Addr);
+                uint64_t Zero = 0;
+                uc_reg_write(Uc, UC_X86_REG_RAX, &Zero);
+            }
             Rsp += 8;
             uc_reg_write(Uc, UC_X86_REG_RSP, &Rsp);
             uc_reg_write(Uc, UC_X86_REG_RIP, &RetAddr);
@@ -380,6 +390,7 @@ void UnicornEmu::Hooks::OnSentinelExec(uc_engine* Uc, uint64_t Addr, uint32_t Si
             uc_emu_stop(Uc);
         }
     }
+    UnicornEmu::TraceRecordApi(EntryCopy.Name.c_str(), RetVal, RetRip);
     uc_reg_write(Uc, UC_X86_REG_RAX, &RetVal);
     if (DiagnosticHooksEnabled)
         Logger::Log("{GRY}<< %s -> 0x%llx{RESET}\n", EntryCopy.Name.c_str(), RetVal);

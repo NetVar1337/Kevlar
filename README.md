@@ -126,9 +126,15 @@ Enable focused diagnostics:
 | `--diag` | Enable detailed diagnostic hooks; significantly slower |
 | `--modreads` | Trace reads from mapped system modules |
 | `--no-seh` | Disable synthetic SEH dispatch |
-| `--intel` | Enable the current Intel CPU profile overrides |
+| `--intel` | Accepted for compatibility; the coherent Intel profile is always active |
+| `--seed <n>` | Deterministic seed for TSC jitter (default is fixed) |
 | `--vgk-override` | Convert the configured VGK access-denied result to success |
 | `--devirt` | Enable devirtualization-testing behavior |
+| `--strict-exports` | Unhandled exports return `STATUS_NOT_IMPLEMENTED` instead of `0` |
+| `--provenance` | Trace branch decisions + API results for early rejection paths |
+| `--trace <file>` | Record a deterministic execution trace |
+| `--check <file>` | Replay a trace; report the first divergence |
+| `--no-pause` | Skip the final pause; exit ~5s after a no-thread run (automation) |
 
 ### Runtime layout
 
@@ -189,18 +195,47 @@ KEVLAR/
 libs/                      # Logger, PE mapper and symbol parser
 extern/                    # Vendored public headers
 vcpkg-ports/               # Reproducible dependency overlay
+tests/                     # Smoke test driver generator + runner
+tools/pdb_layout/          # DIA-based kernel structure layout generator
+generated/                 # Generated layout headers (pdb_layout output)
 ```
 
 ## Roadmap
 
-- [ ] Replace independent CPUID mutations with coherent platform profiles
-- [ ] Add branch and value-provenance tracing for early rejection paths
-- [ ] Generate Windows-build-specific kernel structure layouts from PDBs
-- [ ] Add strict handling for unknown exports instead of ambiguous zero returns
+- [x] Replace independent CPUID mutations with coherent platform profiles
+- [x] Add branch and value-provenance tracing for early rejection paths (`--provenance`)
+- [x] Generate Windows-build-specific kernel structure layouts from PDBs (`tools/pdb_layout`)
+- [x] Add strict handling for unknown exports instead of ambiguous zero returns (`--strict-exports`)
 - [ ] Expand scheduler, IRQL, APC, DPC, timer and synchronization semantics
 - [ ] Model ACPI, PCI and IOMMU state for IOMMU-oriented drivers
-- [ ] Add deterministic trace replay and differential validation
-- [ ] Add automated smoke tests for PE mapping and emulator initialization
+- [x] Add deterministic trace replay and differential validation (`--trace` / `--check`)
+- [x] Add automated smoke tests for PE mapping and emulator initialization (`tests/smoke.ps1`)
+
+The two remaining items are deferred deliberately: a full scheduler/IRQL/APC/DPC model is
+weeks of semantics work that a partial implementation would destabilize, and ACPI/PCI/IOMMU
+modeling needs a captured trace of what an IOMMU-oriented driver (e.g. FACEIT_IOMMU) actually
+reads before it can be shaped.
+
+### Smoke tests and layout generation
+
+Automated smoke tests cover PE mapping and emulator initialization end-to-end:
+
+```powershell
+.\tests\smoke.ps1                 # builds, generates a minimal .sys, runs, asserts
+.\tests\smoke.ps1 -SkipBuild      # reuse an existing build
+```
+
+`tests\make_test_driver.py` emits a minimal x64 native driver (no imports, a KPCR/GS read,
+a conditional branch) that must return `STATUS_SUCCESS` for the test to pass.
+
+Structure layouts for the actual target ntoskrnl PDB are generated with the DIA SDK:
+
+```powershell
+.\tools\pdb_layout.ps1            # -> generated\kernel_layout.h (GEN_<STRUCT>_<FIELD> defines)
+```
+
+The harness still uses the hardcoded `ntoskrnl_struct.h` layouts; regenerating and consuming
+the generated offsets for a different Windows build is a follow-on.
 
 ## Known limitations
 
@@ -210,6 +245,12 @@ vcpkg-ports/               # Reproducible dependency overlay
 - Host threads do not perfectly reproduce Windows scheduling and IRQL behavior.
 - PnP, power, DMA, filter stacks and real device behavior are incomplete.
 - Diagnostic mode can produce large traces and run substantially slower.
+- Import resolution (`PEFile::ResolveImport`) crashes the host when a driver imports from
+  a resolvable `ntoskrnl.exe`: `ParseExport` can record a dangling export-name key in the
+  per-module export map, and `GetExport` on the affected hash bucket faults. The cached
+  `ntoskrnl.exe` is also not always resolvable by the loader, which takes the null-import
+  path. This is pre-existing and surfaced by the smoke-test driver; it must be fixed before
+  any real driver import (EAC/VGK/FACEIT all import ntoskrnl functions).
 
 ## Credits
 

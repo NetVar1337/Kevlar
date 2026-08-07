@@ -15,6 +15,7 @@
 
 #include "host/config/config.h"
 #include "core/exec/unicorn_engine.h"
+#include "core/exec/timing_spoof.h"
 #include "core/memory/unicorn_memory.h"
 #include "core/process/unicorn_threading.h"
 #include "core/loader/environment.h"
@@ -24,7 +25,10 @@
 #include "host/providers/static_export_provider.h"
 #include "host/providers/provider.h"
 #include "core/registry/virtual_fs.h"
+#include "core/diagnostics/diag_center.h"
 #include "api/io/io_device.h"
+
+static bool NoPause = false;
 
 __forceinline void InitDirs() {
     char ExePath[MAX_PATH] = { 0 };
@@ -107,9 +111,15 @@ int main(int Argc, char* Argv[]) {
         Logger::Log("  --diag                  Enable diagnostic hooks (slow){RESET}\n");
         Logger::Log("  --no-seh                Disable SEH dispatch{RESET}\n");
         Logger::Log("  --modreads               Enable module read logging{RESET}\n");
-        Logger::Log("  --intel                 Enable Intel CPU spoof{RESET}\n");
+        Logger::Log("  --intel                 (no-op) coherent Intel CPU profile is always active{RESET}\n");
+        Logger::Log("  --seed <n>              Deterministic seed for TSC jitter (default fixed){RESET}\n");
         Logger::Log("  --vgk-override          Override STATUS_ACCESS_DENIED from vgk DriverEntry{RESET}\n");
         Logger::Log("  --devirt                Enable devirtualization testing{RESET}\n");
+        Logger::Log("  --strict-exports        Unhandled exports return STATUS_NOT_IMPLEMENTED instead of 0{RESET}\n");
+        Logger::Log("  --provenance            Trace branch decisions + API results for rejection paths{RESET}\n");
+        Logger::Log("  --trace <file>          Record deterministic execution trace{RESET}\n");
+        Logger::Log("  --check <file>          Replay trace; report first divergence{RESET}\n");
+        Logger::Log("  --no-pause              Skip final pause; exit ~5s after a no-thread run (automation){RESET}\n");
     };
 
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
@@ -161,12 +171,48 @@ int main(int Argc, char* Argv[]) {
                 Logger::Log("{CYN}Module read logging ENABLED{RESET}\n");
             } else if (Arg == "--intel") {
                 UnicornEmu::IntelCpuSpoofEnabled = true;
-                Logger::Log("{CYN}Intel CPU spoof ENABLED{RESET}\n");
+                Logger::Log("{CYN}--intel is a no-op: coherent Intel CPU profile is always active{RESET}\n");
+            } else if (Arg.rfind("--seed", 0) == 0) {
+                std::string Val = (Arg.size() > 6 && Arg[6] == '=')
+                    ? Arg.substr(7) : (I + 1 < Argc ? Argv[++I] : "");
+                if (!Val.empty()) {
+                    TimingSeed = strtoull(Val.c_str(), nullptr, 0);
+                    Logger::Log("{CYN}Timing seed set to 0x%llx{RESET}\n", TimingSeed);
+                } else {
+                    Logger::Log("{RED}--seed requires a value (e.g. --seed 0x1234){RESET}\n");
+                }
             } else if (Arg.rfind("--devirt", 0) == 0) {
                 UnicornEmu::DevirtualizationTest = true;
                 Logger::Log("{CYN}Devirtualization Testing ENABLED{RESET}\n");
-            }
-            else if (Arg == "--pause")
+            } else if (Arg == "--strict-exports") {
+                UnicornEmu::StrictExportsEnabled = true;
+                Logger::Log("{CYN}Strict exports ENABLED (unhandled -> STATUS_NOT_IMPLEMENTED){RESET}\n");
+            } else if (Arg == "--provenance") {
+                UnicornEmu::ProvenanceEnabled = true;
+                if (!DiagCenter::Instance().IsEnabled())
+                    DiagCenter::Instance().Initialize();
+                Logger::Log("{CYN}Provenance tracing ENABLED (branch decisions + API results){RESET}\n");
+            } else if (Arg.rfind("--trace", 0) == 0) {
+                std::string Val = (Arg.size() > 7 && Arg[7] == '=')
+                    ? Arg.substr(8) : (I + 1 < Argc ? Argv[++I] : "");
+                if (!Val.empty()) {
+                    UnicornEmu::TraceRecordPath = Val;
+                    Logger::Log("{CYN}Trace recording to %s{RESET}\n", Val.c_str());
+                } else {
+                    Logger::Log("{RED}--trace requires a file path{RESET}\n");
+                }
+            } else if (Arg.rfind("--check", 0) == 0) {
+                std::string Val = (Arg.size() > 7 && Arg[7] == '=')
+                    ? Arg.substr(8) : (I + 1 < Argc ? Argv[++I] : "");
+                if (!Val.empty()) {
+                    UnicornEmu::TraceCheckPath = Val;
+                    Logger::Log("{CYN}Trace check against %s (differential validation){RESET}\n", Val.c_str());
+                } else {
+                    Logger::Log("{RED}--check requires a file path{RESET}\n");
+                }
+            } else if (Arg == "--no-pause") {
+                NoPause = true;
+            } else if (Arg == "--pause")
             {
                system("pause");
             } else {
@@ -330,6 +376,10 @@ int main(int Argc, char* Argv[]) {
 
     UnicornEmu::InstallWatchpoints(UnicornEmu::PrimaryEngine);
 
+    if (!UnicornEmu::TraceRecordPath.empty() || !UnicornEmu::TraceCheckPath.empty() || UnicornEmu::ProvenanceEnabled) {
+        UnicornEmu::InstallTraceCapture(UnicornEmu::PrimaryEngine, DRIVER_BASE_UC, MainModule->GetVirtualSize());
+    }
+
     //UnicornEmu::InstallFocusedTrace(UnicornEmu::PrimaryEngine,
     //    DRIVER_BASE_UC + 0x11000, DRIVER_BASE_UC + 0x12FFF);
 
@@ -439,7 +489,8 @@ int main(int Argc, char* Argv[]) {
                 }
             }
 
-            if (!EverHadThreads && Elapsed >= MaxWaitSeconds) {
+            double NoThreadTimeout = NoPause ? 5.0 : MaxWaitSeconds;
+            if (!EverHadThreads && Elapsed >= NoThreadTimeout) {
                 Logger::Log("{YEL}No threads spawned after %.0fs — giving up{RESET}\n", Elapsed);
                 break;
             }
@@ -449,7 +500,8 @@ int main(int Argc, char* Argv[]) {
     }
 
     Logger::Log("{GRN}Done. Press any key to exit.{RESET}\n");
-    system("pause");
+    if (!NoPause)
+        system("pause");
 
     UnicornEmu::Shutdown();
     Logger::MarkThreadEnd("main");

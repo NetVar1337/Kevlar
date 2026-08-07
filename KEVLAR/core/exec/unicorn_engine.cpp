@@ -18,6 +18,10 @@ bool UnicornEmu::DevirtualizationTest = false;
 bool UnicornEmu::RdmsrInsnHookSupported = false;
 bool UnicornEmu::WrmsrInsnHookSupported = false;
 bool UnicornEmu::MsrCodeInterceptEnabled = false;
+bool UnicornEmu::StrictExportsEnabled = false;
+bool UnicornEmu::ProvenanceEnabled = false;
+std::string UnicornEmu::TraceRecordPath;
+std::string UnicornEmu::TraceCheckPath;
 
 namespace UnicornEmu {
     uc_engine* PrimaryEngine = nullptr;
@@ -218,6 +222,9 @@ void UnicornEmu::Shutdown() {
     if (DiagCenter::Instance().IsEnabled()) {
         DiagCenter::Instance().Shutdown();
     }
+
+    if (ProvenanceEnabled || !TraceRecordPath.empty() || !TraceCheckPath.empty())
+        TraceFlush();
 
     SentinelMap.clear();
     MappedRegions.clear();

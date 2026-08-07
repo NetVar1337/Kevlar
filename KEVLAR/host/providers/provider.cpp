@@ -134,6 +134,10 @@ uintptr_t Provider::AddDataImpl(const char* nameExport, PVOID hookExport, size_t
 }
 
 uint64_t Provider::unimplemented_stub() {
+    if (UnicornEmu::StrictExportsEnabled) {
+        Logger::Log("\t\t{RED}INSIDE STUB (strict) -> STATUS_NOT_IMPLEMENTED{RESET}\n");
+        return 0xC0000002ULL; // STATUS_NOT_IMPLEMENTED
+    }
     Logger::Log("\t\t{RED}INSIDE STUB, RETURNING 0{RESET}\n");
     return 0;
 }
