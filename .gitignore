@@ -1,0 +1,46 @@
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+ipch/
+
+# Build output and intermediates
+builds/
+x64/
+Debug/
+Release/
+[Bb]in/
+[Oo]bj/
+*.obj
+*.iobj
+*.ipdb
+*.pch
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.exe
+*.dll
+*.tlog
+*.lastbuildstate
+
+# vcpkg generated state
+vcpkg_installed/
+
+# Runtime inputs and artifacts
+*.sys
+*.log
+pdb_cache/
+easyanticheat_threads/
+FACEIT_AC/
+FACEIT_IOMMU/
+**/vfs/
+**/vreg/
+
+# Local tooling
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

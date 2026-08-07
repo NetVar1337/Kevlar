@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="core">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\exec">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000002}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\exception">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\diagnostics">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-00000000000e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\io">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000004}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\loader">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000005}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\memory">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000006}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\object">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000007}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\process">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000008}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\registry">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-000000000009}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\debug">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-00000000000a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\detection">
+      <UniqueIdentifier>{a0000001-0000-0000-0000-00000000000b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api\ke">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000002}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api\ex">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api\mm">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000004}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api\io">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000005}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api\nt">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000006}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api\ps">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000007}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api\ob">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000008}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="api\rtl">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-000000000009}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="host">
+      <UniqueIdentifier>{c0000001-0000-0000-0000-000000000001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="host\main">
+      <UniqueIdentifier>{c0000001-0000-0000-0000-000000000002}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="host\providers">
+      <UniqueIdentifier>{c0000001-0000-0000-0000-000000000003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="host\ipc">
+      <UniqueIdentifier>{c0000001-0000-0000-0000-000000000004}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="host\config">
+      <UniqueIdentifier>{c0000001-0000-0000-0000-000000000005}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include">
+      <UniqueIdentifier>{d0000001-0000-0000-0000-000000000001}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="core\exec\unicorn_engine.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\unicorn_engine_util.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\emulation_loop.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\timing_spoof.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\module_mapper.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\module_mapper_system.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\unicorn_hooks.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\unicorn_hooks_exception.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\unicorn_hooks_insn.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\unicorn_hooks_monitor.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\unicorn_hooks_install.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\instruction_emulator.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\insn_crypto.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\insn_avx.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exec\insn_avx_ext.cpp">
+      <Filter>core\exec</Filter>
+    </ClCompile>
+    <ClCompile Include="core\exception\seh_dispatch.cpp">
+      <Filter>core\exception</Filter>
+    </ClCompile>
+    <ClCompile Include="core\diagnostics\diag_center.cpp">
+      <Filter>core\diagnostics</Filter>
+    </ClCompile>
+    <ClCompile Include="core\io\io_manager.cpp">
+      <Filter>core\io</Filter>
+    </ClCompile>
+    <ClCompile Include="core\io\irp_ioctl.cpp">
+      <Filter>core\io</Filter>
+    </ClCompile>
+    <ClCompile Include="core\io\irp_readwrite.cpp">
+      <Filter>core\io</Filter>
+    </ClCompile>
+    <ClCompile Include="core\loader\environment.cpp">
+      <Filter>core\loader</Filter>
+    </ClCompile>
+    <ClCompile Include="core\loader\kernel_structs.cpp">
+      <Filter>core\loader</Filter>
+    </ClCompile>
+    <ClCompile Include="core\memory\unicorn_memory.cpp">
+      <Filter>core\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="core\object\handle_manager.cpp">
+      <Filter>core\object</Filter>
+    </ClCompile>
+    <ClCompile Include="core\process\unicorn_threading.cpp">
+      <Filter>core\process</Filter>
+    </ClCompile>
+    <ClCompile Include="core\registry\virtual_fs.cpp">
+      <Filter>core\registry</Filter>
+    </ClCompile>
+    <ClCompile Include="core\debug\dbg_print.cpp">
+      <Filter>core\debug</Filter>
+    </ClCompile>
+    <ClCompile Include="core\debug\dbg_misc.cpp">
+      <Filter>core\debug</Filter>
+    </ClCompile>
+    <ClCompile Include="core\debug\dbg_render.cpp">
+      <Filter>core\debug</Filter>
+    </ClCompile>
+    <ClCompile Include="core\debug\dbg_bugcheck.cpp">
+      <Filter>core\debug</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ke\ke_event.cpp">
+      <Filter>api\ke</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ke\ke_timer.cpp">
+      <Filter>api\ke</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ke\ke_sync.cpp">
+      <Filter>api\ke</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ke\ke_misc.cpp">
+      <Filter>api\ke</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ex\ex_pool.cpp">
+      <Filter>api\ex</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ex\ex_sync.cpp">
+      <Filter>api\ex</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ex\ex_pushlock.cpp">
+      <Filter>api\ex</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ex\ex_misc.cpp">
+      <Filter>api\ex</Filter>
+    </ClCompile>
+    <ClCompile Include="api\mm\mm_pool.cpp">
+      <Filter>api\mm</Filter>
+    </ClCompile>
+    <ClCompile Include="api\mm\mm_mdl.cpp">
+      <Filter>api\mm</Filter>
+    </ClCompile>
+    <ClCompile Include="api\mm\mm_virtual.cpp">
+      <Filter>api\mm</Filter>
+    </ClCompile>
+    <ClCompile Include="api\io\io_device.cpp">
+      <Filter>api\io</Filter>
+    </ClCompile>
+    <ClCompile Include="api\io\flt_filter.cpp">
+      <Filter>api\io</Filter>
+    </ClCompile>
+    <ClCompile Include="api\nt\nt_query.cpp">
+      <Filter>api\nt</Filter>
+    </ClCompile>
+    <ClCompile Include="api\nt\nt_file.cpp">
+      <Filter>api\nt</Filter>
+    </ClCompile>
+    <ClCompile Include="api\nt\nt_registry.cpp">
+      <Filter>api\nt</Filter>
+    </ClCompile>
+    <ClCompile Include="api\nt\nt_memory.cpp">
+      <Filter>api\nt</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ps\ps_process.cpp">
+      <Filter>api\ps</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ps\se_token.cpp">
+      <Filter>api\ps</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ob\ob_object.cpp">
+      <Filter>api\ob</Filter>
+    </ClCompile>
+    <ClCompile Include="api\ob\cm_callback.cpp">
+      <Filter>api\ob</Filter>
+    </ClCompile>
+    <ClCompile Include="api\rtl\rtl_string.cpp">
+      <Filter>api\rtl</Filter>
+    </ClCompile>
+    <ClCompile Include="api\rtl\rtl_misc.cpp">
+      <Filter>api\rtl</Filter>
+    </ClCompile>
+    <ClCompile Include="api\rtl\rtl_registry.cpp">
+      <Filter>api\rtl</Filter>
+    </ClCompile>
+    <ClCompile Include="api\rtl\crt_string.cpp">
+      <Filter>api\rtl</Filter>
+    </ClCompile>
+    <ClCompile Include="host\main\kevlar.cpp">
+      <Filter>host\main</Filter>
+    </ClCompile>
+    <ClCompile Include="host\providers\provider.cpp">
+      <Filter>host\providers</Filter>
+    </ClCompile>
+    <ClCompile Include="host\providers\ntoskrnl_provider.cpp">
+      <Filter>host\providers</Filter>
+    </ClCompile>
+    <ClCompile Include="host\providers\static_export_provider.cpp">
+      <Filter>host\providers</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="core\exec\unicorn_engine.h">
+      <Filter>core\exec</Filter>
+    </ClInclude>
+    <ClInclude Include="core\exec\unicorn_engine_internal.h">
+      <Filter>core\exec</Filter>
+    </ClInclude>
+    <ClInclude Include="core\exec\instruction_emulator.h">
+      <Filter>core\exec</Filter>
+    </ClInclude>
+    <ClInclude Include="core\exec\insn_emulator_internal.h">
+      <Filter>core\exec</Filter>
+    </ClInclude>
+    <ClInclude Include="core\exec\timing_spoof.h">
+      <Filter>core\exec</Filter>
+    </ClInclude>
+    <ClInclude Include="core\exception\seh_dispatch.h">
+      <Filter>core\exception</Filter>
+    </ClInclude>
+    <ClInclude Include="core\diagnostics\diag_center.h">
+      <Filter>core\diagnostics</Filter>
+    </ClInclude>
+    <ClInclude Include="core\io\io_manager.h">
+      <Filter>core\io</Filter>
+    </ClInclude>
+    <ClInclude Include="core\io\irp_dispatch.h">
+      <Filter>core\io</Filter>
+    </ClInclude>
+    <ClInclude Include="core\loader\environment.h">
+      <Filter>core\loader</Filter>
+    </ClInclude>
+    <ClInclude Include="core\loader\kernel_structs.h">
+      <Filter>core\loader</Filter>
+    </ClInclude>
+    <ClInclude Include="core\memory\unicorn_memory.h">
+      <Filter>core\memory</Filter>
+    </ClInclude>
+    <ClInclude Include="core\object\handle_manager.h">
+      <Filter>core\object</Filter>
+    </ClInclude>
+    <ClInclude Include="core\process\unicorn_threading.h">
+      <Filter>core\process</Filter>
+    </ClInclude>
+    <ClInclude Include="core\registry\virtual_fs.h">
+      <Filter>core\registry</Filter>
+    </ClInclude>
+    <ClInclude Include="core\debug\dbg_print.h">
+      <Filter>core\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="core\debug\dbg_misc.h">
+      <Filter>core\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="core\debug\dbg_render.h">
+      <Filter>core\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="core\debug\dbg_bugcheck.h">
+      <Filter>core\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="core\debug\dbg_bugcheck_table.h">
+      <Filter>core\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ke\ke_event.h">
+      <Filter>api\ke</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ke\ke_timer.h">
+      <Filter>api\ke</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ke\ke_sync.h">
+      <Filter>api\ke</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ke\ke_misc.h">
+      <Filter>api\ke</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ex\ex_pool.h">
+      <Filter>api\ex</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ex\ex_sync.h">
+      <Filter>api\ex</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ex\ex_pushlock.h">
+      <Filter>api\ex</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ex\ex_misc.h">
+      <Filter>api\ex</Filter>
+    </ClInclude>
+    <ClInclude Include="api\mm\mm_pool.h">
+      <Filter>api\mm</Filter>
+    </ClInclude>
+    <ClInclude Include="api\mm\mm_mdl.h">
+      <Filter>api\mm</Filter>
+    </ClInclude>
+    <ClInclude Include="api\mm\mm_virtual.h">
+      <Filter>api\mm</Filter>
+    </ClInclude>
+    <ClInclude Include="api\io\io_device.h">
+      <Filter>api\io</Filter>
+    </ClInclude>
+    <ClInclude Include="api\io\flt_filter.h">
+      <Filter>api\io</Filter>
+    </ClInclude>
+    <ClInclude Include="api\nt\nt_query.h">
+      <Filter>api\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="api\nt\nt_file.h">
+      <Filter>api\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="api\nt\nt_registry.h">
+      <Filter>api\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="api\nt\nt_memory.h">
+      <Filter>api\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ps\ps_process.h">
+      <Filter>api\ps</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ps\se_token.h">
+      <Filter>api\ps</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ob\ob_object.h">
+      <Filter>api\ob</Filter>
+    </ClInclude>
+    <ClInclude Include="api\ob\cm_callback.h">
+      <Filter>api\ob</Filter>
+    </ClInclude>
+    <ClInclude Include="api\rtl\rtl_string.h">
+      <Filter>api\rtl</Filter>
+    </ClInclude>
+    <ClInclude Include="api\rtl\rtl_misc.h">
+      <Filter>api\rtl</Filter>
+    </ClInclude>
+    <ClInclude Include="api\rtl\rtl_registry.h">
+      <Filter>api\rtl</Filter>
+    </ClInclude>
+    <ClInclude Include="api\rtl\crt_string.h">
+      <Filter>api\rtl</Filter>
+    </ClInclude>
+    <ClInclude Include="include\common.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\nt_define.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ntoskrnl_struct.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\utils.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="host\config\config.h">
+      <Filter>host\config</Filter>
+    </ClInclude>
+    <ClInclude Include="host\providers\provider.h">
+      <Filter>host\providers</Filter>
+    </ClInclude>
+    <ClInclude Include="host\providers\ntoskrnl_provider.h">
+      <Filter>host\providers</Filter>
+    </ClInclude>
+    <ClInclude Include="host\providers\static_export_provider.h">
+      <Filter>host\providers</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="inline_assembly.asm" />
+  </ItemGroup>
+</Project>

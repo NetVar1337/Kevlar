@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{56dad92e-748c-4a80-aa99-29accdafa36c}</ProjectGuid>
+    <RootNamespace>KEVLAR</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <VcpkgTriplet>x64-windows-static</VcpkgTriplet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <SpectreMitigation>false</SpectreMitigation>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>..\builds\Debug\</OutDir>
+    <IntDir>..\builds\$(Platform)\$(Configuration)\</IntDir>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
+    <IncludePath>..\libs;..\kevlar_proxy;..\vcpkg_installed\x64-windows-static\include;$(IncludePath)</IncludePath>
+    <LibraryPath>..\vcpkg_installed\x64-windows-static\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>..\builds\Release\</OutDir>
+    <IntDir>..\builds\$(Platform)\$(Configuration)\</IntDir>
+    <LibraryPath>..\vcpkg_installed\x64-windows-static\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>..\libs;..\kevlar_proxy;..\vcpkg_installed\x64-windows-static\include;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;ZYDIS_STATIC_BUILD;ZYCORE_STATIC_BUILD</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir);..\extern\Zydis\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>SymParser.lib;PEFile.lib;Logger.lib;Zydis.lib;Zycore.lib;unicorn.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\x64\Debug\;..\vcpkg_installed\x64-windows-static\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;ZYDIS_STATIC_BUILD;ZYCORE_STATIC_BUILD</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <ExceptionHandling>Async</ExceptionHandling>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <CallingConvention>FastCall</CallingConvention>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <GuardEHContMetadata>false</GuardEHContMetadata>
+      <StructMemberAlignment>16Bytes</StructMemberAlignment>
+      <AdditionalIncludeDirectories>$(ProjectDir);..\extern\Zydis\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>SymParser.lib;PEFile.lib;Logger.lib;Zydis.lib;Zycore.lib;unicorn.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\x64\Release\;..\vcpkg_installed\x64-windows-static\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ProgramDatabaseFile />
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="core\exec\unicorn_engine.cpp" />
+    <ClCompile Include="core\exec\unicorn_engine_util.cpp" />
+    <ClCompile Include="core\exec\emulation_loop.cpp" />
+    <ClCompile Include="core\exec\timing_spoof.cpp" />
+    <ClCompile Include="core\exec\module_mapper.cpp" />
+    <ClCompile Include="core\exec\module_mapper_system.cpp" />
+    <ClCompile Include="core\exec\unicorn_hooks.cpp" />
+    <ClCompile Include="core\exec\unicorn_hooks_exception.cpp" />
+    <ClCompile Include="core\exec\unicorn_hooks_insn.cpp" />
+    <ClCompile Include="core\exec\unicorn_hooks_monitor.cpp" />
+    <ClCompile Include="core\exec\unicorn_hooks_install.cpp" />
+    <ClCompile Include="core\exec\instruction_emulator.cpp" />
+    <ClCompile Include="core\exec\insn_crypto.cpp" />
+    <ClCompile Include="core\exec\insn_avx.cpp" />
+    <ClCompile Include="core\exec\insn_avx_ext.cpp" />
+    <ClCompile Include="core\exception\seh_dispatch.cpp" />
+    <ClCompile Include="core\diagnostics\diag_center.cpp" />
+    <ClCompile Include="core\io\io_manager.cpp" />
+    <ClCompile Include="core\io\irp_ioctl.cpp" />
+    <ClCompile Include="core\io\irp_readwrite.cpp" />
+    <ClCompile Include="core\loader\environment.cpp" />
+    <ClCompile Include="core\loader\kernel_structs.cpp" />
+    <ClCompile Include="core\memory\unicorn_memory.cpp" />
+    <ClCompile Include="core\object\handle_manager.cpp" />
+    <ClCompile Include="core\process\unicorn_threading.cpp" />
+    <ClCompile Include="core\registry\virtual_fs.cpp" />
+    <ClCompile Include="core\debug\dbg_print.cpp" />
+    <ClCompile Include="core\debug\dbg_misc.cpp" />
+    <ClCompile Include="core\debug\dbg_render.cpp" />
+    <ClCompile Include="core\debug\dbg_bugcheck.cpp" />
+    <ClCompile Include="api\ke\ke_event.cpp" />
+    <ClCompile Include="api\ke\ke_timer.cpp" />
+    <ClCompile Include="api\ke\ke_sync.cpp" />
+    <ClCompile Include="api\ke\ke_misc.cpp" />
+    <ClCompile Include="api\ex\ex_pool.cpp" />
+    <ClCompile Include="api\ex\ex_sync.cpp" />
+    <ClCompile Include="api\ex\ex_pushlock.cpp" />
+    <ClCompile Include="api\ex\ex_misc.cpp" />
+    <ClCompile Include="api\mm\mm_pool.cpp" />
+    <ClCompile Include="api\mm\mm_mdl.cpp" />
+    <ClCompile Include="api\mm\mm_virtual.cpp" />
+    <ClCompile Include="api\io\io_device.cpp" />
+    <ClCompile Include="api\io\flt_filter.cpp" />
+    <ClCompile Include="api\nt\nt_query.cpp" />
+    <ClCompile Include="api\nt\nt_file.cpp" />
+    <ClCompile Include="api\nt\nt_registry.cpp" />
+    <ClCompile Include="api\nt\nt_memory.cpp" />
+    <ClCompile Include="api\ps\ps_process.cpp" />
+    <ClCompile Include="api\ps\se_token.cpp" />
+    <ClCompile Include="api\ob\ob_object.cpp" />
+    <ClCompile Include="api\ob\cm_callback.cpp" />
+    <ClCompile Include="api\rtl\rtl_string.cpp" />
+    <ClCompile Include="api\rtl\rtl_misc.cpp" />
+    <ClCompile Include="api\rtl\rtl_registry.cpp" />
+    <ClCompile Include="api\rtl\crt_string.cpp" />
+    <ClCompile Include="host\main\kevlar.cpp" />
+    <ClCompile Include="host\providers\provider.cpp" />
+    <ClCompile Include="host\providers\ntoskrnl_provider.cpp" />
+    <ClCompile Include="host\providers\static_export_provider.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="config.h" />
+    <ClInclude Include="core\exec\unicorn_engine.h" />
+    <ClInclude Include="core\exec\unicorn_engine_internal.h" />
+    <ClInclude Include="core\exec\instruction_emulator.h" />
+    <ClInclude Include="core\exec\insn_emulator_internal.h" />
+    <ClInclude Include="core\exec\timing_spoof.h" />
+    <ClInclude Include="core\exception\seh_dispatch.h" />
+    <ClInclude Include="core\diagnostics\diag_center.h" />
+    <ClInclude Include="core\io\io_manager.h" />
+    <ClInclude Include="core\io\irp_dispatch.h" />
+    <ClInclude Include="core\loader\environment.h" />
+    <ClInclude Include="core\loader\kernel_structs.h" />
+    <ClInclude Include="core\memory\unicorn_memory.h" />
+    <ClInclude Include="core\object\handle_manager.h" />
+    <ClInclude Include="core\process\unicorn_threading.h" />
+    <ClInclude Include="core\registry\virtual_fs.h" />
+    <ClInclude Include="core\debug\dbg_print.h" />
+    <ClInclude Include="core\debug\dbg_misc.h" />
+    <ClInclude Include="core\debug\dbg_render.h" />
+    <ClInclude Include="core\debug\dbg_bugcheck.h" />
+    <ClInclude Include="core\debug\dbg_bugcheck_table.h" />
+    <ClInclude Include="api\ke\ke_event.h" />
+    <ClInclude Include="api\ke\ke_timer.h" />
+    <ClInclude Include="api\ke\ke_sync.h" />
+    <ClInclude Include="api\ke\ke_misc.h" />
+    <ClInclude Include="api\ex\ex_pool.h" />
+    <ClInclude Include="api\ex\ex_sync.h" />
+    <ClInclude Include="api\ex\ex_pushlock.h" />
+    <ClInclude Include="api\ex\ex_misc.h" />
+    <ClInclude Include="api\mm\mm_pool.h" />
+    <ClInclude Include="api\mm\mm_mdl.h" />
+    <ClInclude Include="api\mm\mm_virtual.h" />
+    <ClInclude Include="api\io\io_device.h" />
+    <ClInclude Include="api\io\flt_filter.h" />
+    <ClInclude Include="api\nt\nt_query.h" />
+    <ClInclude Include="api\nt\nt_file.h" />
+    <ClInclude Include="api\nt\nt_registry.h" />
+    <ClInclude Include="api\nt\nt_memory.h" />
+    <ClInclude Include="api\ps\ps_process.h" />
+    <ClInclude Include="api\ps\se_token.h" />
+    <ClInclude Include="api\ob\ob_object.h" />
+    <ClInclude Include="api\ob\cm_callback.h" />
+    <ClInclude Include="api\rtl\rtl_string.h" />
+    <ClInclude Include="api\rtl\rtl_misc.h" />
+    <ClInclude Include="api\rtl\rtl_registry.h" />
+    <ClInclude Include="api\rtl\crt_string.h" />
+    <ClInclude Include="include\common.h" />
+    <ClInclude Include="include\nt_define.h" />
+    <ClInclude Include="include\ntoskrnl_struct.h" />
+    <ClInclude Include="include\utils.h" />
+    <ClInclude Include="host\config\config.h" />
+    <ClInclude Include="host\providers\provider.h" />
+    <ClInclude Include="host\providers\ntoskrnl_provider.h" />
+    <ClInclude Include="host\providers\static_export_provider.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="inline_assembly.asm" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

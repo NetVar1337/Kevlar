@@ -1,0 +1,9 @@
+{
+  "name": "kevlar",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "unicorn",
+    "zydis"
+  ],
+  "builtin-baseline": "d92484ed3c5020c6679d095ad3e5add907887b62"
+}

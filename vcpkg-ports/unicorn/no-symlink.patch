@@ -1,0 +1,12 @@
+diff --git a/cmake/bundle_static.cmake b/cmake/bundle_static.cmake
+index e7d7a70..570061d 100644
+--- a/cmake/bundle_static.cmake
++++ b/cmake/bundle_static.cmake
+@@ -52,6 +52,6 @@ function(bundle_static_library tgt_name bundled_tgt_name library_name)
+     SYMLINK_NAME "${library_name}.o"
+   )
+   add_custom_command(TARGET ${bundled_tgt_name} POST_BUILD
+-    COMMAND ${CMAKE_COMMAND} -E create_symlink "$<TARGET_FILE_NAME:${bundled_tgt_name}>" "$<TARGET_FILE_DIR:${bundled_tgt_name}>/$<TARGET_PROPERTY:${bundled_tgt_name},SYMLINK_NAME>"
++    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${bundled_tgt_name}>" "$<TARGET_FILE_DIR:${bundled_tgt_name}>/$<TARGET_PROPERTY:${bundled_tgt_name},SYMLINK_NAME>"
+   )
+ endfunction()
