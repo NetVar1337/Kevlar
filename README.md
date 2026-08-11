@@ -323,12 +323,9 @@ emit typed struct definitions rather than offsets.
 
 ## Credits
 
-- **lolz5465az** — original KEVLAR author and public release
 - **TheRealWaryas** — KACE, which inspired the project’s early development
 - **Unicorn Engine** — CPU emulation
 - **Zydis / Zycore** — x86/x64 instruction decoding and support
-
-Original release discussion: [UnknownCheats — KEVLAR x64 kernel driver emulator source](https://www.unknowncheats.me/forum/anti-cheat-bypass/765226-kevlar-x64-kernel-driver-emulator-source-eac-vgk.html)
 
 ## License
 
