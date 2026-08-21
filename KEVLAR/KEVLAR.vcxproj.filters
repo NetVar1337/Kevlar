@@ -64,6 +64,9 @@
     <Filter Include="api\rtl">
       <UniqueIdentifier>{b0000001-0000-0000-0000-000000000009}</UniqueIdentifier>
     </Filter>
+    <Filter Include="api\cng">
+      <UniqueIdentifier>{b0000001-0000-0000-0000-00000000000a}</UniqueIdentifier>
+    </Filter>
     <Filter Include="host">
       <UniqueIdentifier>{c0000001-0000-0000-0000-000000000001}</UniqueIdentifier>
     </Filter>
@@ -249,6 +252,9 @@
     <ClCompile Include="api\rtl\crt_string.cpp">
       <Filter>api\rtl</Filter>
     </ClCompile>
+    <ClCompile Include="api\cng\cng.cpp">
+      <Filter>api\cng</Filter>
+    </ClCompile>
     <ClCompile Include="host\main\kevlar.cpp">
       <Filter>host\main</Filter>
     </ClCompile>
@@ -397,6 +403,9 @@
     </ClInclude>
     <ClInclude Include="api\rtl\crt_string.h">
       <Filter>api\rtl</Filter>
+    </ClInclude>
+    <ClInclude Include="api\cng\cng.h">
+      <Filter>api\cng</Filter>
     </ClInclude>
     <ClInclude Include="include\common.h">
       <Filter>include</Filter>

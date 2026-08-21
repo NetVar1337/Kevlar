@@ -232,6 +232,7 @@
     <ClCompile Include="api\rtl\rtl_misc.cpp" />
     <ClCompile Include="api\rtl\rtl_registry.cpp" />
     <ClCompile Include="api\rtl\crt_string.cpp" />
+    <ClCompile Include="api\cng\cng.cpp" />
     <ClCompile Include="host\main\kevlar.cpp" />
     <ClCompile Include="host\providers\provider.cpp" />
     <ClCompile Include="host\providers\ntoskrnl_provider.cpp" />
@@ -285,6 +286,7 @@
     <ClInclude Include="api\rtl\rtl_misc.h" />
     <ClInclude Include="api\rtl\rtl_registry.h" />
     <ClInclude Include="api\rtl\crt_string.h" />
+    <ClInclude Include="api\cng\cng.h" />
     <ClInclude Include="include\common.h" />
     <ClInclude Include="include\nt_define.h" />
     <ClInclude Include="include\ntoskrnl_struct.h" />
