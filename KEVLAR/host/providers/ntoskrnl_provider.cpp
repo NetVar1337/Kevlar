@@ -28,6 +28,7 @@
 #include "core/debug/dbg_bugcheck.h"
 #include "api/io/flt_filter.h"
 #include "api/rtl/crt_string.h"
+#include "api/cng/cng.h"
 #include "core/debug/dbg_print.h"
 
 // Bounded ACPI/PCI/IOMMU model: synthetic PCI config space + a guest-resident
@@ -335,39 +336,27 @@ void ntoskrnl_provider::Initialize() {
     Provider::AddFuncImpl("KdChangeOption", h_KdChangeOption);
     Provider::AddFuncImpl("KdSystemDebugControl", h_KdSystemDebugControl);
 
-    auto BcryptDll = LoadLibraryA("bcrypt.dll");
-    if (BcryptDll) {
-        const char* BcryptFuncs[] = {
-            "BCryptOpenAlgorithmProvider",
-            "BCryptCloseAlgorithmProvider",
-            "BCryptCreateHash",
-            "BCryptHashData",
-            "BCryptFinishHash",
-            "BCryptDestroyHash",
-            "BCryptGetProperty",
-            "BCryptSetProperty",
-            "BCryptGenRandom",
-            "BCryptGenerateSymmetricKey",
-            "BCryptEncrypt",
-            "BCryptDecrypt",
-            "BCryptImportKeyPair",
-            "BCryptExportKey",
-            "BCryptVerifySignature",
-            "BCryptSignHash",
-            "BCryptDeriveKeyPBKDF2",
-            "BCryptDestroyKey",
-            "BCryptDuplicateHash",
-        };
-        int BcryptCount = 0;
-        for (auto& FuncName : BcryptFuncs) {
-            auto FuncAddr = GetProcAddress(BcryptDll, FuncName);
-            if (FuncAddr) {
-                Provider::AddFuncImpl(FuncName, (PVOID)FuncAddr);
-                BcryptCount++;
-            }
-        }
-        Logger::Log("{GRN}BCrypt passthrough: registered %d functions{RESET}\n", BcryptCount);
-    }
+    Provider::AddFuncImpl("BCryptOpenAlgorithmProvider", h_BCryptOpenAlgorithmProvider);
+    Provider::AddFuncImpl("BCryptCloseAlgorithmProvider", h_BCryptCloseAlgorithmProvider);
+    Provider::AddFuncImpl("BCryptCreateHash", h_BCryptCreateHash);
+    Provider::AddFuncImpl("BCryptHashData", h_BCryptHashData);
+    Provider::AddFuncImpl("BCryptFinishHash", h_BCryptFinishHash);
+    Provider::AddFuncImpl("BCryptDestroyHash", h_BCryptDestroyHash);
+    Provider::AddFuncImpl("BCryptGetProperty", h_BCryptGetProperty);
+    Provider::AddFuncImpl("BCryptSetProperty", h_BCryptSetProperty);
+    Provider::AddFuncImpl("BCryptGenRandom", h_BCryptGenRandom);
+    Provider::AddFuncImpl("BCryptGenerateSymmetricKey", h_BCryptGenerateSymmetricKey);
+    Provider::AddFuncImpl("BCryptEncrypt", h_BCryptEncrypt);
+    Provider::AddFuncImpl("BCryptDecrypt", h_BCryptDecrypt);
+    Provider::AddFuncImpl("BCryptImportKeyPair", h_BCryptImportKeyPair);
+    Provider::AddFuncImpl("BCryptExportKey", h_BCryptExportKey);
+    Provider::AddFuncImpl("BCryptVerifySignature", h_BCryptVerifySignature);
+    Provider::AddFuncImpl("BCryptSignHash", h_BCryptSignHash);
+    Provider::AddFuncImpl("BCryptDeriveKeyPBKDF2", h_BCryptDeriveKeyPBKDF2);
+    Provider::AddFuncImpl("BCryptDestroyKey", h_BCryptDestroyKey);
+    Provider::AddFuncImpl("BCryptDuplicateHash", h_BCryptDuplicateHash);
+    Provider::AddFuncImpl("BCryptHash", h_BCryptHash);
+    Logger::Log("{GRN}BCrypt passthrough: registered 20 functions{RESET}\n");
 
     Provider::AddFuncImpl("FltRegisterFilter", h_FltRegisterFilter);
     Provider::AddFuncImpl("FltStartFiltering", h_FltStartFiltering);
